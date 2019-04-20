@@ -144,6 +144,8 @@ user> (netcdf/overview test-file)
   :missing-value 1.0E20}}
 
 ;; Actual get some data
+user> (def test-data @(get-in (netcdf/overview test-file) ["tas" :data]))
+#'user/test-data
 user> (require '[tech.v2.datatype :as dtype])
 nil
 user> (require '[tech.v2.tensor :as tens])
