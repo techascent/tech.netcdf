@@ -1,4 +1,5 @@
 language: clojure
 lein: 2.8.3
 before_install:
-  scripts/get_test_data.sh
+  - curl -O https://download.clojure.org/install/linux-install-1.10.0.403.sh && chmod +x linux-install-1.10.0.403.sh && sudo ./linux-install-1.10.0.403.sh
+  - scripts/get_test_data.sh
