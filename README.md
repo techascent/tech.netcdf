@@ -1,5 +1,7 @@
 # tech.netcdf
 
+[![Clojars Project](https://clojars.org/techascent/tech.netcdf/latest-version.svg)](https://clojars.org/techascent/tech.netcdf)
+
 netcdf findings into the tech ecosystem.  Based on the netcdfAll library.
 
 
