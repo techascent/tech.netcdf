@@ -3,6 +3,8 @@
 netcdf findings into the tech ecosystem.  Based on the netcdfAll library.
 
 
+[sample files](https://www.unidata.ucar.edu/software/netcdf/examples/files.html)
+
 
 ## Usage
 
