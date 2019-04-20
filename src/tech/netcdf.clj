@@ -17,6 +17,8 @@
 
 
 (defn fname->netcdf
+  "Open a netcdf file.  The return value is tracked via 'tech.resource/track.  If the
+  user wishes to release the memory early they can call .close on the object."
   ^NetcdfFile [fname]
   ;;Files are Closeable and AutoCloseable so the resource system knows how to
   ;;deal with them.
