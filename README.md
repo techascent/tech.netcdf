@@ -9,10 +9,13 @@ netcdf findings into the tech ecosystem.  Based on the netcdfAll library.
 ## Usage
 
 ```clojure
-
 user> (require '[tech.netcdf :as netcdf])
 :tech.resource.gc Reference thread starting
 nil
+;; The return value of fname->netcdf is tracked by the tech.resource resource's 
+;; stack based system.
+;; When not repl-programming, use tech.resource/stack-resource-context to wrap
+;; access to the netcdf file.
 user> (def test-file (netcdf/fname->netcdf "test/data/sresa1b_ncar_ccsm3-example.nc"))
 SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
 SLF4J: Defaulting to no-operation (NOP) logger implementation
