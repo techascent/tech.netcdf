@@ -18,6 +18,8 @@ SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
 SLF4J: Defaulting to no-operation (NOP) logger implementation
 SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
 #'user/test-file
+
+;; Get all the variable info; attributes, dimensions, everything
 user> (netcdf/variables test-file)
 {"tas"
  {:name "tas",
@@ -42,7 +44,7 @@ user> (netcdf/variables test-file)
     :value 1.0E20}
 ...
 
-
+;;Get an overview of what is going on.
 user> (netcdf/overview test-file)
 {"tas"
  {:name "tas",
@@ -141,8 +143,7 @@ user> (netcdf/overview test-file)
   :units "kg m-2 s-1",
   :missing-value 1.0E20}}
 
-
-
+;; Actual get some data
 user> (require '[tech.v2.datatype :as dtype])
 nil
 user> (require '[tech.v2.tensor :as tens])
