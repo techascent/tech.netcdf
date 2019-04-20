@@ -71,56 +71,30 @@
     (-> (dtype-proto/get-datatype item)
         casting/numeric-type?))
   (->buffer-backing-store [item]
-    (let [byte-buf (.getDataAsByteBuffer item)]
-      (case (dtype-proto/get-datatype item)
-        :int8 byte-buf
-        :int16 (.asShortBuffer byte-buf)
-        :int32 (.asIntBuffer byte-buf)
-        :int64 (.asLongBuffer byte-buf)
-        :float32 (.asFloatBuffer byte-buf)
-        :float64 (.asDoubleBuffer byte-buf))))
+    (dtype-proto/->buffer-backing-store (.getStorage item)))
 
 
-  jna/PToPtr
-  (is-jna-ptr-convertible? [item]
-    (dtype-proto/convertible-to-nio-buffer? item))
-  (->ptr-backing-store [item]
-    (when (casting/numeric-type? (dtype-proto/get-datatype item))
-      (jna/as-ptr (.getDataAsByteBuffer item))))
+  dtype-proto/PToList
+  (convertible-to-fastutil-list? [item] true)
+  (->list-backing-store [item]
+    (dtype-proto/->list-backing-store (.getStorage item)))
+
+
+  dtype-proto/PToArray
+  (->sub-array [item]
+    (dtype-proto/->sub-array (.getStorage item)))
+  (->array-copy [item]
+    (dtype-proto/->array-copy (.getStorage item)))
 
 
   dtype-proto/PToReader
   (->reader-of-type [item datatype unchecked?]
-    (if-let [backing-store (dtype-proto/as-nio-buffer item)]
-      (dtype-proto/->reader-of-type backing-store datatype unchecked?)
-      (-> (case (dtype-proto/get-datatype item)
-            :boolean (reify
-                       BooleanReader
-                       (size [reader] (.getSize item))
-                       (read [reader idx]
-                         (.getBoolean item idx)))
-            :object (reify ObjectReader
-                      (size [reader] (.getSize item))
-                      (read [reader idx]
-                        (.getObject item idx))))
-          (dtype-proto/->reader-of-type datatype unchecked?))))
+    (dtype-proto/->reader-of-type (.getStorage item) datatype unchecked?))
 
 
   dtype-proto/PToWriter
   (->writer-of-type [item datatype unchecked?]
-    (if-let [backing-store (dtype-proto/as-nio-buffer item)]
-      (dtype-proto/->writer-of-type backing-store datatype unchecked?)
-      (-> (case (dtype-proto/get-datatype item)
-            :boolean (reify
-                       BooleanWriter
-                       (size [writer] (.getSize item))
-                       (write [writer idx value]
-                         (.setBoolean item idx value)))
-            :object (reify ObjectWriter
-                      (size [writer] (.getSize item))
-                      (write [writer idx value]
-                        (.setObject item idx value))))
-          (dtype-proto/->reader-of-type datatype unchecked?))))
+    (dtype-proto/->writer-of-type (.getStorage item) datatype unchecked?))
 
 
   dtype-proto/PToIterable
@@ -130,12 +104,7 @@
 
   dtype-proto/PBuffer
   (sub-buffer [item offset length]
-    ;;The readers created from nio buffers will sub buffer the nio buffer.
-    ;;else sub-buffer is generically implemented for all readers.
-    (if-let [data-buf (dtype-proto/as-nio-buffer item)]
-      (dtype-proto/sub-buffer data-buf offset length)
-      (-> (dtype-proto/->reader-of-type item (dtype-proto/get-datatype item) false)
-          (dtype-proto/sub-buffer offset length))))
+    (dtype-proto/sub-buffer (.getStorage item) offset length))
 
 
   dtype-proto/PCopyRawData
@@ -145,7 +114,4 @@
 
   dtype-proto/PSetConstant
   (set-constant! [item offset value elem-count]
-    (if-let [backing-store (dtype-proto/as-nio-buffer item)]
-      (dtype-proto/set-constant! backing-store offset value elem-count)
-      (-> (dtype-proto/->writer-of-type item (dtype-proto/get-datatype item) false)
-          (dtype-proto/set-constant! offset value elem-count)))))
+    (dtype-proto/set-constant! (.getStorage item) offset value elem-count)))
