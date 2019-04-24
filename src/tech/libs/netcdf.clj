@@ -88,18 +88,18 @@
 
 
   dtype-proto/PToReader
-  (->reader-of-type [item datatype unchecked?]
-    (dtype-proto/->reader-of-type (.getStorage item) datatype unchecked?))
+  (->reader [item options]
+    (dtype-proto/->reader (.getStorage item) options))
 
 
   dtype-proto/PToWriter
-  (->writer-of-type [item datatype unchecked?]
-    (dtype-proto/->writer-of-type (.getStorage item) datatype unchecked?))
+  (->writer [item options]
+    (dtype-proto/->writer (.getStorage item) options))
 
 
   dtype-proto/PToIterable
-  (->iterable-of-type [item datatype unchecked?]
-    (dtype-proto/->reader-of-type item datatype unchecked?))
+  (->iterable [item options]
+    (dtype-proto/->reader item options))
 
 
   dtype-proto/PBuffer
