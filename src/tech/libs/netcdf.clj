@@ -88,16 +88,19 @@
 
 
   dtype-proto/PToReader
+  (convertible-to-reader? [item] true)
   (->reader [item options]
     (dtype-proto/->reader (.getStorage item) options))
 
 
   dtype-proto/PToWriter
+  (convertible-to-writer? [item] true)
   (->writer [item options]
     (dtype-proto/->writer (.getStorage item) options))
 
 
   dtype-proto/PToIterable
+  (convertible-to-iterable? [item] true)
   (->iterable [item options]
     (dtype-proto/->reader item options))
 
