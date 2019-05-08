@@ -1,6 +1,5 @@
 (ns tech.libs.netcdf
   (:require [tech.v2.datatype.protocols :as dtype-proto]
-            [clojure.core.matrix.protocols :as mp]
             [camel-snake-kebab.core :refer [->kebab-case]]
             [tech.jna :as jna]
             [tech.v2.datatype.casting :as casting]
@@ -49,22 +48,11 @@
                            netcdf-datatype-map
                            netcdf-datatype->datatype))
 
-  mp/PElementCount
-  (element-count [item] (.getSize item))
+  dtype-proto/PCountable
+  (ecount [item] (.getSize item))
 
-  mp/PDimensionInfo
-  (dimensionality [m] (count (mp/get-shape m)))
-  (get-shape [m] (vec (.getShape m)))
-  (is-scalar? [m] false)
-  (is-vector? [m] true)
-  (dimension-count [m dimension-number]
-    (let [shape (mp/get-shape m)]
-      (if (<= (count shape) (long dimension-number))
-        (get shape dimension-number)
-        (throw (ex-info "Array does not have specific dimension"
-                        {:dimension-number dimension-number
-                         :shape shape})))))
-
+  dtype-proto/PShape
+  (shape [m] (vec (.getShape m)))
 
   dtype-proto/PToNioBuffer
   (convertible-to-nio-buffer? [item]
