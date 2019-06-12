@@ -2,5 +2,4 @@
  :deps {org.clojure/clojure {:mvn/version "1.10.1"}
         techascent/tech.datatype {:mvn/version "4.0-alpha42"}
         edu.ucar/cdm {:mvn/version "4.5.5"}
-        camel-snake-kebab {:mvn/version "0.4.0"}
-        org.slf4j/slf4j-nop {:mvn/version "1.7.25"}}}
+        camel-snake-kebab {:mvn/version "0.4.0"}}}
