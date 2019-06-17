@@ -7,5 +7,4 @@
   :middleware [lein-tools-deps.plugin/resolve-dependencies-with-deps-edn]
   :lein-tools-deps/config {:config-files [:install :user :project]}
   :profiles {:dev {:dependencies [[org.slf4j/slf4j-nop "1.7.25"]]}}
-  ;; :repositories {"boundlessgeo" "https://repo.boundlessgeo.com/artifactory/ucar-cache"}
-  )
+  :repositories {"boundlessgeo" "https://repo.boundlessgeo.com/artifactory/ucar-cache"})

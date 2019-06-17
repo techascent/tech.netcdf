@@ -2,7 +2,7 @@
   (:require [tech.netcdf :as netcdf]
             [tech.v2.tensor :as tens]
             [tech.resource :as resource]
-            [clojure.test :refer :all]))
+            [clojure.test :refer [deftest is]]))
 
 
 (deftest test-netcdf-functionality
@@ -21,6 +21,17 @@
                     ;; set the type to something we can test against
                     (tens/clone :datatype :int32)
                     (tens/->jvm))))))
+     (catch java.io.FileNotFoundException e
+       (println "File not found, maybe try: ./scripts/get_test_data.sh")
+       (throw e)))))
+
+(deftest test-grib2
+  (resource/stack-resource-context
+   (try
+     (let [ds (netcdf/fname->netcdf "./test/data/3600.grib2")
+           overview (netcdf/overview ds)]
+       (is (= (set (keys overview))
+              #{"LambertConformal_Projection" "x" "y" "reftime" "time" "Temperature_surface"})))
      (catch java.io.FileNotFoundException e
        (println "File not found, maybe try: ./scripts/get_test_data.sh")
        (throw e)))))
