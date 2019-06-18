@@ -69,7 +69,8 @@
 
 (defn var->clj
   [^Variable variable]
-  {:name (.getName variable)
+  {:variable variable
+   :name (.getName variable)
    :dimensions (->> (.getDimensions variable)
                     (map dim->clj))
    :attributes (->> (.getAttributes variable)
