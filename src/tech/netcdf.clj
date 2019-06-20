@@ -133,7 +133,7 @@
                     :grids grid-data}))))))
 
 
-(defn lat-lon-query-gridset
+(defn lat-lon-query-gridsets
   "Ignoring time, query a dataset by lat-lon"
   [gridsets lat-lon-seq & {:keys [time-axis z-axis]
                            :or {time-axis 0 z-axis 0}}]
