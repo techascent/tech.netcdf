@@ -134,7 +134,24 @@
 
 
 (defn lat-lon-query-gridsets
-  "Ignoring time, query a dataset by lat-lon"
+  "Ignoring time, query a dataset by lat-lon.  Example output:
+
+  ({:lat 21.145,
+  :lng 237.307,
+  :grid-data
+  [{:missing-value ##NaN,
+    :fullname \"Temperature_surface\",
+    :abbreviation \"TMP\",
+    :level-desc \"Ground or water surface\",
+    :level-type 1,
+    :values
+    ({:cell-lat 21.14511133620467,
+      :cell-lng 237.30713946785917,
+      :row 0,
+      :col 1,
+      :data 296.22930908203125}
+      ...)
+    ...])"
   [gridsets lat-lon-seq & {:keys [time-axis z-axis]
                            :or {time-axis 0 z-axis 0}}]
   (->> gridsets
@@ -161,27 +178,36 @@
                    :lng lng
                    :grid-data
                    (->> grids
-                        (mapv (fn [{:keys [name attributes data]}]
-                                (let [^GridDatatype grid data
-                                      [n-y n-x] (take-last 2 (.getShape grid))
-                                      x-inc-idx (min (- n-x 1) (inc x-idx))
-                                      y-inc-idx (min (- n-y 1) (inc y-idx))]
-                                  {:missing-value (get-in attributes
-                                                          ["missing_value" :value])
-                                   :fullname (.getName grid)
-                                   :abbreviation (get-in attributes
-                                                         ["abbreviation" :value])
-                                   :level-desc (get-in attributes
-                                                       ["Grib2_Level_Desc" :value])
-                                   :level-type (get-in attributes
-                                                       ["Grib2_Level_Type" :value])
-                                   :values (for [x-idx [x-idx x-inc-idx]
+                        (mapv
+                         (fn [{:keys [name attributes data]}]
+                           (let [^GridDatatype grid data
+                                 [n-y n-x] (take-last 2 (.getShape grid))
+                                 x-inc-idx (min (- n-x 1) (inc x-idx))
+                                 y-inc-idx (min (- n-y 1) (inc y-idx))]
+                             {:missing-value (get-in attributes
+                                                     ["missing_value" :value])
+                              :fullname (.getName grid)
+                              :abbreviation (get-in attributes
+                                                    ["abbreviation" :value])
+                              :level-desc (get-in attributes
+                                                  ["Grib2_Level_Desc" :value])
+                              :level-type (get-in attributes
+                                                  ["Grib2_Level_Type" :value])
+                              :values (->> (for [x-idx [x-idx x-inc-idx]
                                                  y-idx [y-idx y-inc-idx]]
-                                             {:row y-idx
-                                              :col x-idx
-                                              :data (-> (.readDataSlice grid
-                                                                        time-axis
-                                                                        z-axis
-                                                                        y-idx
-                                                                        x-idx)
-                                                        (.getDouble 0))})}))))})))))))))
+                                             (let [ll (.getLatLon coordinate-system
+                                                                  x-idx y-idx)]
+
+                                               {:cell-lat (.getLatitude ll)
+                                                :cell-lng (if (< (.getLongitude ll) 0.0)
+                                                            (+ (.getLongitude ll) 360)
+                                                            (.getLongitude ll))
+                                                :row y-idx
+                                                :col x-idx
+                                                :data (-> (.readDataSlice grid
+                                                                          time-axis
+                                                                          z-axis
+                                                                          y-idx
+                                                                          x-idx)
+                                                          (.getDouble 0))}))
+                                           vec)}))))})))))))))

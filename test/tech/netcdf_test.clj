@@ -31,7 +31,28 @@
      (let [ds (netcdf/fname->netcdf "./test/data/3600.grib2")
            overview (netcdf/overview ds)]
        (is (= (set (keys overview))
-              #{"LambertConformal_Projection" "x" "y" "reftime" "time" "Temperature_surface"})))
+              #{"LambertConformal_Projection" "x" "y" "reftime" "time"
+                "Temperature_surface"})))
      (catch java.io.FileNotFoundException e
        (println "File not found, maybe try: ./scripts/get_test_data.sh")
        (throw e)))))
+
+
+(deftest grib2-lat-lon-lookup
+  (resource/stack-resource-context
+   (try
+     (let [ds (netcdf/fname->netcdf "./test/data/3600.grib2")
+           gs (netcdf/netcdf->gridsets ds)
+           lookup (netcdf/lat-lon-query-gridsets gs [[21.145 237.307]])]
+       (is (= 1 (count lookup)))
+       (let [gd (-> (first lookup)
+                    :grid-data)]
+         (is (= 1 (count gd)))
+         (let [gd (first gd)]
+           (is (= 4 (count (:values gd))))
+           (is (= [29622 29616 29622 29622]
+                  (mapv (comp long (partial * 100) :data) (:values gd)))))))
+     (catch java.io.FileNotFoundException e
+       (println "File not found, maybe try: ./scripts/get_test_data.sh")
+       (throw e))))
+  )
