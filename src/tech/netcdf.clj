@@ -6,6 +6,9 @@
             [tech.v2.tensor :as tens])
   (:import [ucar.nc2.dataset NetcdfDataset]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
+           [ucar.unidata.geoloc ProjectionImpl LatLonRect]
+           [ucar.nc2.dt.grid GridDataset GridDataset$Gridset]
+           [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]))
 
 (set! *warn-on-reflection* true)
@@ -102,3 +105,83 @@
                      :units (get-in attributes ["units" :value])
                      :missing-value (get-in attributes ["missing_value" :value]))))
        named-item->map))
+
+
+(defn netcdf->gridsets
+  [netcdf]
+  (let [netcdf (cond
+                 (instance? NetcdfDataset netcdf)
+                 netcdf
+                 (instance? NetcdfFile netcdf)
+                 (NetcdfDataset. ^NetcdfFile netcdf true)
+                 :else
+                 (throw (ex-info "Failed to transform input to netcdf dataset" {})))
+        grid-ds (GridDataset. netcdf)
+        grids (.getGridsets grid-ds)]
+    (->> grids
+         (mapv (fn [^GridDataset$Gridset gridset]
+                 (let [grid-data (->> (.getGrids gridset)
+                                      (map (fn [^GridDatatype %]
+                                             (let [atts (->> (.getAttributes %))])
+                                             {:name (.getName %)
+                                              :attributes (->> (.getAttributes %)
+                                                               (map att->clj)
+                                                               named-item->map)
+                                              :data %})))]
+                   {:coordinate-system (.getGeoCoordSystem gridset)
+                    :projection (.getProjection (.getGeoCoordSystem gridset))
+                    :grids grid-data}))))))
+
+
+(defn lat-lon-query-gridset
+  "Ignoring time, query a dataset by lat-lon"
+  [gridsets lat-lon-seq & {:keys [time-axis z-axis]
+                           :or {time-axis 0 z-axis 0}}]
+  (->> gridsets
+       (mapcat
+        (fn [{:keys [coordinate-system
+                     projection
+                     grids]}]
+          (let [lat-ary (float-array (map first lat-lon-seq))
+                lon-ary (float-array (map second lat-lon-seq))
+                ^GridCoordSystem coordinate-system coordinate-system
+                n-elems (count lat-lon-seq)]
+            (->>
+             (range n-elems)
+             (pmap
+              (fn [idx]
+                (let [lat (aget lat-ary idx)
+                      lng (aget lon-ary idx)
+                      item-idx (.findXYindexFromLatLon coordinate-system
+                                                       lat lng
+                                                       (int-array 2))
+                      x-idx (aget item-idx 0)
+                      y-idx (aget item-idx 1)]
+                  {:lat lat
+                   :lng lng
+                   :grid-data
+                   (->> grids
+                        (mapv (fn [{:keys [name attributes data]}]
+                                (let [^GridDatatype grid data
+                                      [n-y n-x] (take-last 2 (.getShape grid))
+                                      x-inc-idx (min (- n-x 1) (inc x-idx))
+                                      y-inc-idx (min (- n-y 1) (inc y-idx))]
+                                  {:missing-value (get-in attributes
+                                                          ["missing_value" :value])
+                                   :fullname (.getName grid)
+                                   :abbreviation (get-in attributes
+                                                         ["abbreviation" :value])
+                                   :level-desc (get-in attributes
+                                                       ["Grib2_Level_Desc" :value])
+                                   :level-type (get-in attributes
+                                                       ["Grib2_Level_Type" :value])
+                                   :values (for [x-idx [x-idx x-inc-idx]
+                                                 y-idx [y-idx y-inc-idx]]
+                                             {:row y-idx
+                                              :col x-idx
+                                              :data (-> (.readDataSlice grid
+                                                                        time-axis
+                                                                        z-axis
+                                                                        y-idx
+                                                                        x-idx)
+                                                        (.getDouble 0))})}))))})))))))))
