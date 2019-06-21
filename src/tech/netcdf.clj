@@ -139,9 +139,10 @@
                                    (let [atts (->> (.getAttributes %)
                                                    (map att->clj)
                                                    named-item->map)
-                                         missing-value (get-in atts
-                                                               ["missing_value"
-                                                                :value])
+                                         missing-value (-> (get-in atts
+                                                                   ["missing_value"
+                                                                    :value])
+                                                           float)
                                          data (-> (.readDataSlice % time-axis
                                                                   z-axis
                                                                   -1 -1)
@@ -149,7 +150,8 @@
                                          data (if (and missing-value fill-value)
                                                 (unary-op/unary-reader
                                                  :float32
-                                                 (if (= x missing-value)
+                                                 (if (= 0 (Float/compare
+                                                           x missing-value))
                                                    fill-value
                                                    x)
                                                  data)
@@ -297,7 +299,10 @@
                                   (assoc :value
                                          (->> (binary-op/binary-reader
                                                :float32
-                                               (if (= x missing-value)
+                                               (if (= 0
+                                                      (Float/compare
+                                                       x
+                                                       (float missing-value)))
                                                  0
                                                  (* x y))
                                                values
@@ -349,7 +354,9 @@ tech.netcdf> (exact-match-lat-lon-query (first query))
                                                        values
                                                        false)
                                                       rel-row rel-col)]
-                                         (if (and (= val (float missing-value))
+                                         (if (and (= 0 (Float/compare
+                                                        val
+                                                        missing-value))
                                                   (:fill-value options))
                                            (:fill-value options)
                                            val)))))))))))
