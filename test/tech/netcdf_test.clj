@@ -1,6 +1,7 @@
 (ns tech.netcdf-test
   (:require [tech.netcdf :as netcdf]
             [tech.v2.tensor :as tens]
+            [tech.v2.datatype :as dtype]
             [tech.resource :as resource]
             [clojure.test :refer [deftest is]]))
 
@@ -43,15 +44,31 @@
    (try
      (let [ds (netcdf/fname->netcdf "./test/data/3600.grib2")
            gs (netcdf/netcdf->gridsets ds)
-           lookup (netcdf/lat-lon-query-gridsets gs [[21.145 237.307]])]
-       (is (= 1 (count lookup)))
-       (let [gd (-> (first lookup)
-                    :grid-data)]
-         (is (= 1 (count gd)))
-         (let [gd (first gd)]
-           (is (= 4 (count (:values gd))))
-           (is (= [29622 29616 29622 29622]
-                  (mapv (comp long (partial * 100) :data) (:values gd)))))))
+           lookup (first (netcdf/lat-lon-query-gridsets gs [[21.145 237.307]]))
+           distance-result (-> (netcdf/distance-lerp-lat-lon-query lookup)
+                               :grid-data
+                               first
+                               (update :value #(-> (* 100 %)
+                                                   long))
+                               (dissoc :missing-value))
+           exact-result (-> (netcdf/exact-match-lat-lon-query lookup)
+                            :grid-data
+                            first
+                            (update :value #(-> (* 100 %)
+                                                long))
+                            (dissoc :missing-value))]
+       (is (= {:fullname "Temperature_surface"
+               :abbreviation "TMP"
+               :level-desc "Ground or water surface"
+               :level-type 1
+               :value 29620}
+              distance-result))
+       (is (= {:fullname "Temperature_surface"
+               :abbreviation "TMP"
+               :level-desc "Ground or water surface"
+               :level-type 1
+               :value 29622}
+              exact-result)))
      (catch java.io.FileNotFoundException e
        (println "File not found, maybe try: ./scripts/get_test_data.sh")
        (throw e))))
