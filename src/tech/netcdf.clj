@@ -206,7 +206,7 @@
                 grid-inc (quot (long query-gridsize) 2)]
             (->>
              (range n-elems)
-             (pmap
+             (map
               (fn [idx]
                 (let [lat (aget lat-ary idx)
                       lng (aget lon-ary idx)
