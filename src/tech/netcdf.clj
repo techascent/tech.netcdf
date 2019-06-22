@@ -161,7 +161,7 @@
                                       ;;force to float32 regardless
                                       :data (dtt/clone data :datatype :float32
                                                        :container-type
-                                                       :java-array)}))))]
+                                                       :native-buffer)}))))]
                    {:coordinate-system (.getGeoCoordSystem gridset)
                     :projection (.getProjection (.getGeoCoordSystem gridset))
                     :grids grid-data}))))))
@@ -281,9 +281,7 @@
                                      (:lng query-data)])
         [n-y n-x _] (dtype/shape grid-latlngs)
         weights (mapv (partial dfn/distance target-latlngs)
-                      (for [y (range n-y)
-                            x (range n-x)]
-                        (dtt/select grid-latlngs y x (range 2))))
+                      (dtt/slice grid-latlngs 2))
         weights (dfn/- 1 (dfn// weights (dfn/+ weights)))
         ;;normalize weights
         weights (dfn// weights (dfn/+ weights))]
