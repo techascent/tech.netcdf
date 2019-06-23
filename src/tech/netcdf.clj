@@ -5,17 +5,19 @@
             [tech.libs.netcdf :as lib-netcdf]
             [tech.v2.tensor :as dtt]
             [tech.v2.tensor.typecast :as dtt-typecast]
+            [tech.v2.datatype.typecast :as dtype-typecast]
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.unary-op :as unary-op]
             [tech.v2.datatype.boolean-op :as boolean-op])
-  (:import [ucar.nc2.dataset NetcdfDataset]
+  (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
            [ucar.unidata.geoloc ProjectionImpl LatLonRect]
            [ucar.nc2.dt.grid GridDataset GridDataset$Gridset]
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
+           [tech.v2.datatype IntReader FloatReader]
            ))
 
 (set! *warn-on-reflection* true)
@@ -114,149 +116,148 @@
        named-item->map))
 
 
-(defn netcdf->gridsets
-  "Return a sequence of gridsets.  A gridset has a coordinate-space and a sequence
-  of grids.  Grids have a name, attributes, and a 2d tensor.  When creating the gridset,
+(defn netcdf->grids
+  "Return a sequence of grids.  A grid is a coordinate space and cube of data.
+  Grids have a name, attributes, and a 2d tensor.  When creating the gridset,
   you can choose the time-axis and the z-axis to choose.  -1 means choose the entire
   dimension; defaults to 0 meaning all of the returned grids is 2 dimension.  It should
   be safe to close the netcdf file after this operation."
-  [netcdf & {:keys [time-axis z-axis fill-value]
-             :or {time-axis 0 z-axis 0}}]
-  (let [netcdf (cond
-                 (instance? NetcdfDataset netcdf)
-                 netcdf
-                 (instance? NetcdfFile netcdf)
-                 (resource/track (NetcdfDataset. ^NetcdfFile netcdf true))
-                 :else
-                 (throw (ex-info "Failed to transform input to netcdf dataset" {})))
-        grid-ds ^GridDataset (resource/track (GridDataset. netcdf))
-        grids (.getGridsets grid-ds)]
-    (->> grids
-         (mapv (fn [^GridDataset$Gridset gridset]
-                 (let [grid-data
-                       (->> (.getGrids gridset)
-                            (map (fn [^GridDatatype %]
-                                   (let [atts (->> (.getAttributes %)
-                                                   (map att->clj)
-                                                   named-item->map)
-                                         missing-value (-> (get-in atts
-                                                                   ["missing_value"
-                                                                    :value])
-                                                           float)
-                                         data (-> (.readDataSlice % time-axis
-                                                                  z-axis
-                                                                  -1 -1)
-                                                  dtt/ensure-tensor)
-                                         data (if (and missing-value fill-value)
-                                                (unary-op/unary-reader
-                                                 :float32
-                                                 (if (= 0 (Float/compare
-                                                           x missing-value))
-                                                   fill-value
-                                                   x)
-                                                 data)
-                                                data)]
-                                     {:name (.getName %)
-                                      :attributes atts
-                                      ;;force to float32 regardless
-                                      :data (dtt/clone data :datatype :float32
-                                                       :container-type
-                                                       :native-buffer)}))))]
-                   {:coordinate-system (.getGeoCoordSystem gridset)
-                    :projection (.getProjection (.getGeoCoordSystem gridset))
-                    :grids grid-data}))))))
+  [netcdf & {:keys [time-axis z-axis fill-value datatype]
+             :or {time-axis 0 z-axis 0 datatype :float32}}]
+  (resource/stack-resource-context
+    (let [netcdf (cond
+                   (instance? NetcdfDataset netcdf)
+                   netcdf
+                   (instance? NetcdfFile netcdf)
+                   (resource/track (NetcdfDataset. ^NetcdfFile netcdf true))
+                   :else
+                   (throw (ex-info "Failed to transform input to netcdf dataset" {})))
+          grid-ds ^GridDataset (resource/track (GridDataset. netcdf))]
+      (->> (.getGridsets grid-ds)
+           (mapcat
+            (fn [^GridDataset$Gridset gridset]
+              (->> (.getGrids gridset)
+                   (map
+                    (fn [^GridDatatype %]
+                      (let [atts (->> (.getAttributes %)
+                                      (map att->clj)
+                                      named-item->map)
+                            missing-value (-> (get-in atts
+                                                      ["missing_value"
+                                                       :value])
+                                              float)
+                            data (-> (.readDataSlice % time-axis
+                                                     z-axis
+                                                     -1 -1)
+                                     dtt/ensure-tensor)
+                            data (-> (if (and missing-value fill-value)
+                                       (unary-op/unary-reader
+                                        :float32
+                                        (if (= 0 (Float/compare
+                                                  x missing-value))
+                                          fill-value
+                                          x)
+                                        data)
+                                       data)
+                                     (dtt/clone
+                                      :datatype datatype
+                                      :container-type :native-buffer))]
+                        {:name (.getName %)
+                         :attributes atts
+                         :data data
+                         :data-reader (dtt-typecast/->float32-reader
+                                       data
+                                       false)
+                         :coordinate-system (.getGeoCoordSystem gridset)}))))))
+           vec))))
 
 
-(defn lat-lon-query-gridsets
-  "Ignoring time, query a dataset by lat-lon.  Example output:
+(def test-file "test/data/3600.grib2")
+(def test-lat-lng [[21.145 237.307]])
+
+
+(defn lat-lng-query-grid-exact
+  "Ignoring time, query a grid pointwise by lat-lon.  Returns only the
+  containing grid cell.
 
   ({:lat 21.145,
-  :lng 237.307,
-  :grid-data
+   :lng 237.307,
+   :cell-lat 21.14511133620467
+   :cell-lng 237.30713946785917
+   :row 0
+   :col 1
+   :grids
   [{:missing-value ##NaN,
     :fullname \"Temperature_surface\",
     :abbreviation \"TMP\",
     :level-desc \"Ground or water surface\",
     :level-type 1,
-    :values
-    ({:cell-lat 21.14511133620467,
-      :cell-lng 237.30713946785917,
-      :row 0,
-      :col 1,
-      :data 296.22930908203125}
-      ...)
+    :value 296.22930908203125
+    }]
     ...])"
-  [gridsets lat-lon-seq & {:keys [query-gridsize]
-                           :or {query-gridsize 3}}]
-  (->> gridsets
-       (mapcat
-        (fn [{:keys [coordinate-system
-                     projection
-                     grids]}]
-          (let [lat-ary (float-array (map first lat-lon-seq))
-                lon-ary (float-array (map second lat-lon-seq))
-                ^GridCoordSystem coordinate-system coordinate-system
-                n-elems (count lat-lon-seq)
-                n-x (-> (.getXHorizAxis coordinate-system)
-                        (.getShape)
-                        first
-                        long)
-                n-y (-> (.getYHorizAxis coordinate-system)
-                        (.getShape)
-                        first
-                        long)
-                grid-inc (quot (long query-gridsize) 2)]
-            (->>
-             (range n-elems)
-             (map
-              (fn [idx]
-                (let [lat (aget lat-ary idx)
-                      lng (aget lon-ary idx)
-                      item-idx (.findXYindexFromLatLon coordinate-system
-                                                       lat lng
-                                                       (int-array 2))
-                      x-idx (aget item-idx 0)
-                      y-idx (aget item-idx 1)
-                      x-idx-range (range (max 0 (- x-idx grid-inc))
-                                         (min n-x (+ x-idx grid-inc 1)))
-                      y-idx-range (range (max 0 (- y-idx grid-inc))
-                                         (min n-y (+ y-idx grid-inc 1)))]
-                  {:lat lat
-                   :lng lng
-                   :row y-idx
-                   :col x-idx
-                   :x-idx-range x-idx-range
-                   :y-idx-range y-idx-range
-                   :grid-latlngs (-> (for [y-idx y-idx-range
-                                           x-idx x-idx-range]
-                                       (let [ll (.getLatLon coordinate-system
-                                                            x-idx
-                                                            y-idx)
-                                             lng (.getLongitude ll)]
-                                         [(.getLatitude ll)
-                                          (if (< lng 0)
-                                            (+ lng 360.0)
-                                            lng)]))
-                                     (dtt/->tensor)
-                                     (dtt/reshape [(count y-idx-range)
-                                                   (count x-idx-range)
-                                                   2]))
-                   :grid-data
-                   (->> grids
-                        (mapv
-                         (fn [{:keys [name attributes data]}]
-                           {:missing-value (get-in attributes
-                                                   ["missing_value" :value])
-                            :fullname name
-                            :abbreviation (get-in attributes
-                                                  ["abbreviation" :value])
-                            :level-desc (get-in attributes
-                                                ["Grib2_Level_Desc" :value])
-                            :level-type (get-in attributes
-                                                ["Grib2_Level_Type" :value])
-                            ;;clone to make repl life better
-                            :values (dtt/select data y-idx-range x-idx-range)}
-                           )))})))))))))
+  [{:keys [coordinate-system name attributes data-reader] :as grid}
+   lat-lon-seq & [options]]
+  (let [^java.util.List lat-lng-seq (vec lat-lon-seq)
+        n-elems (count lat-lng-seq)
+        ^GridCoordSystem coordinate-system coordinate-system
+        ^CoordinateAxis1D x-axis (.getXHorizAxis coordinate-system)
+        ^CoordinateAxis1D y-axis (.getYHorizAxis coordinate-system)
+        n-x (-> x-axis
+                (.getShape)
+                first
+                long)
+        n-y (-> y-axis
+                (.getShape)
+                first
+                long)
+        lat-ary (-> (reify FloatReader
+                      (lsize [_] n-elems)
+                      (read [_ idx] (first (.get lat-lng-seq idx))))
+                    (dtype/copy! (float-array n-elems)))
+        lng-ary (-> (reify FloatReader
+                      (lsize [_] n-elems)
+                      (read [_ idx] (second (.get lat-lng-seq idx))))
+                    (dtype/copy! (float-array n-elems)))
+        x-coords (float-array n-elems)
+        y-coords (float-array n-elems)
+        _ (-> (.getProjection coordinate-system)
+              (.latLonToProj ^"[[F" (into-array [lat-ary lng-ary])
+                             ^"[[F" (into-array [x-coords y-coords])
+                             0 1))
+        x-idx (reify IntReader
+                (lsize [_] n-elems)
+                (read [_ idx]
+                  (.findCoordElementBounded x-axis (aget x-coords idx))))
+        y-idx (reify IntReader
+                (lsize [_] n-elems)
+                (read [_ idx]
+                  (.findCoordElementBounded y-axis (aget y-coords idx))))
+        cell-tens (-> (dtype/object-reader
+                       n-elems
+                       (fn [idx]
+                         (let [idx (long idx)
+                               ll (.getLatLon coordinate-system
+                                              (.read x-idx idx)
+                                              (.read y-idx idx))
+                               lng (.getLongitude ll)]
+                           [(.getLatitude ll)
+                            (if (< lng 0)
+                              (+ lng 360.0)
+                              lng)])))
+                      (dtt/->tensor :datatype :float32))
+        ^FloatTensorReader data-reader data-reader
+        values (-> (reify FloatReader
+                     (lsize [_] n-elems)
+                     (read [_ idx]
+                       (.read2d data-reader (.read y-idx idx) (.read x-idx idx))))
+                   (dtype/copy! (float-array n-elems)))]
+    {:missing-value (get-in attributes ["missing_value" :value])
+     :fullname name
+     :abbreviation (get-in attributes ["abbreviation" :value])
+     :level-desc (get-in attributes ["Grib2_Level_Desc" :value])
+     :level-type (get-in attributes ["Grib2_Level_Type" :value])
+     :cell-lat-lngs (when-not (:skip-cell-lat-lngs options) (dtt/clone cell-tens))
+     :values values}))
 
 
 (defn distance-lerp-lat-lon-query
