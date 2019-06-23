@@ -116,23 +116,29 @@
        named-item->map))
 
 
-(defn netcdf->grids
+(defn fname->grids
   "Return a sequence of grids.  A grid is a coordinate space and cube of data.
-  Grids have a name, attributes, and a 2d tensor.  When creating the gridset,
+  Grids have a name, attributes, and a 2d tensor.  When creating the grids,
   you can choose the time-axis and the z-axis to choose.  -1 means choose the entire
-  dimension; defaults to 0 meaning all of the returned grids is 2 dimension.  It should
-  be safe to close the netcdf file after this operation."
-  [netcdf & {:keys [time-axis z-axis fill-value datatype]
-             :or {time-axis 0 z-axis 0 datatype :float32}}]
+  dimension; defaults to 0 meaning all of the returned grids is 2 dimension.  Code
+  is written with the assumtion that a non-negative integer will be chosen for
+  the time-axis and the z-axis as this will increase the dimensionality of the data
+  tensor.  Returns a sequence of grids where a grid is:
+  {:name
+   :attributes map of name->attribute
+   :coordinate-system GridCoordSystem
+   :data tensor
+   :data-reader FloatTensorReader (allows arbitrary indexing and ad-hoc algorithms)
+  }
+  "
+  [fname & {:keys [time-axis z-axis fill-value datatype]
+            :or {time-axis 0 z-axis 0 datatype :float32}}]
   (resource/stack-resource-context
-    (let [netcdf (cond
-                   (instance? NetcdfDataset netcdf)
-                   netcdf
-                   (instance? NetcdfFile netcdf)
-                   (resource/track (NetcdfDataset. ^NetcdfFile netcdf true))
-                   :else
-                   (throw (ex-info "Failed to transform input to netcdf dataset" {})))
-          grid-ds ^GridDataset (resource/track (GridDataset. netcdf))]
+   (let [netcdf (fname->netcdf fname)
+         ;;True stands for 'enhanced'.
+         ;;https://www.unidata.ucar.edu/software/thredds/current/netcdf-java/tutorial/NetcdfDataset.html
+         dataset (resource/track (NetcdfDataset. netcdf true))
+         grid-ds ^GridDataset (resource/track (GridDataset. dataset))]
       (->> (.getGridsets grid-ds)
            (mapcat
             (fn [^GridDataset$Gridset gridset]
@@ -159,6 +165,8 @@
                                           x)
                                         data)
                                        data)
+                                     ;; If you want to use TVM or numpy, choose a native
+                                     ;; buffer tensor.
                                      (dtt/clone
                                       :datatype datatype
                                       :container-type :native-buffer))]
@@ -177,24 +185,18 @@
 
 
 (defn lat-lng-query-grid-exact
-  "Ignoring time, query a grid pointwise by lat-lon.  Returns only the
-  containing grid cell.
-
-  ({:lat 21.145,
-   :lng 237.307,
-   :cell-lat 21.14511133620467
-   :cell-lng 237.30713946785917
-   :row 0
-   :col 1
-   :grids
-  [{:missing-value ##NaN,
-    :fullname \"Temperature_surface\",
-    :abbreviation \"TMP\",
-    :level-desc \"Ground or water surface\",
-    :level-type 1,
-    :value 296.22930908203125
-    }]
-    ...])"
+  "Ignoring time, query a grid pointwise by lat-lon.  Returns only closest match.
+  Takes a grid and a sequence of [lat lng] tuples.
+  Returns
+  {
+   :missing-value ##NaN,
+   :fullname \"Temperature_surface\",
+   :abbreviation \"TMP\",
+   :level-desc \"Ground or water surface\",
+   :level-type 1,
+   :cell-lat-lngs - tensor<float32>[n-elems 2] - lat-lng tensor of cell centers.
+   :values - float32[n-elems]
+  }"
   [{:keys [coordinate-system name attributes data-reader] :as grid}
    lat-lon-seq & [options]]
   (let [^java.util.List lat-lng-seq (vec lat-lon-seq)
@@ -260,102 +262,51 @@
      :values values}))
 
 
-(defn distance-lerp-lat-lon-query
-  "Return weighted average of all values by distance.  If options contains
+(comment
+  (defn distance-lerp-lat-lon-query
+    "Return weighted average of all values by distance.  If options contains
   :fill-value and one of the values is equal to the entry missing value, fill-value
   will be used instead.  If fill value is not provided, then 0 is used.  This will
   lower your average temp.
 
   tech.netcdf> (distance-lerp-lat-lon-query (first query))
-{:lat 21.145
- :lng 237.307
- :grid-data
- [{:missing-value ##NaN
+  {:lat 21.145
+  :lng 237.307
+  :grid-data
+  [{:missing-value ##NaN
    :fullname \"Temperature_surface\"
    :abbreviation \"TMP\"
    :level-desc \"Ground or water surface\"
    :level-type 1
    :value 296.20944}]}"
-  [{:keys [lat lng grid-latlngs grid-data] :as query-data}
-   & [options]]
-  (let [target-latlngs (float-array [(:lat query-data)
-                                     (:lng query-data)])
-        [n-y n-x _] (dtype/shape grid-latlngs)
-        weights (mapv (partial dfn/distance target-latlngs)
-                      (dtt/slice grid-latlngs 2))
-        weights (dfn/- 1 (dfn// weights (dfn/+ weights)))
-        ;;normalize weights
-        weights (dfn// weights (dfn/+ weights))]
-    (-> query-data
-        (dissoc :grid-latlngs :x-idx-range :y-idx-range
-                :row :col)
-        (assoc :grid-data
-               (->> grid-data
-                    (mapv (fn [{:keys [missing-value values] :as entry}]
-                            ;;flatten values out.
-                            (let [missing-value (float missing-value)]
-                              (-> (dissoc entry :values)
-                                  (assoc :value
-                                         (->> (binary-op/binary-reader
-                                               :float32
-                                               (if (= 0
-                                                      (Float/compare
-                                                       x
-                                                       (float missing-value)))
-                                                 0
-                                                 (* x y))
-                                               values
-                                               weights)
-                                              dfn/+)))))))))))
-
-
-(defn exact-match-lat-lon-query
-  "Return the item that was the closest match to the distance query.
-  If fill-value is provided in options then it will be used should
-  the exact match be a missing value.  Else the missing value will
-  be returned.
-tech.netcdf> (exact-match-lat-lon-query (first query))
-{:lat 21.145
- :lng 237.307
- :query-lat 21.14511133620467
- :query-lng 237.30713946785917
- :grid-data
- [{:missing-value ##NaN
-   :fullname \"Temperature_surface\"
-   :abbreviation \"TMP\"
-   :level-desc \"Ground or water surface\"
-   :level-type 1
-   :value 296.2293}]}"
-  [{:keys [lat lng row col x-idx-range y-idx-range grid-latlngs
-           grid-data] :as query-data}
-   & [options]]
-  (let [rel-row (first (dfn/argfilter
-                        (boolean-op/make-boolean-unary-op :object (= row x))
-                        y-idx-range))
-        rel-col (first (dfn/argfilter
-                        (boolean-op/make-boolean-unary-op :object (= col x))
-                        x-idx-range))
-        [query-lat query-lng] (-> (dtt/select grid-latlngs rel-row rel-col (range 2))
-                                  (dtype/->reader))]
-    (-> query-data
-        (dissoc :grid-latlngs :x-idx-range :y-idx-range
-                :row :col)
-        (assoc :query-lat query-lat
-               :query-lng query-lng
-               :grid-data
-               (->> grid-data
-                    (mapv (fn [{:keys [values missing-value] :as entry}]
-                            (-> entry
-                                (dissoc :values)
-                                (assoc :value
-                                       (let [val
-                                             (.read2d (dtt-typecast/->float32-reader
-                                                       values
-                                                       false)
-                                                      rel-row rel-col)]
-                                         (if (and (= 0 (Float/compare
-                                                        val
-                                                        missing-value))
-                                                  (:fill-value options))
-                                           (:fill-value options)
-                                           val)))))))))))
+    [{:keys [lat lng grid-latlngs grid-data] :as query-data}
+     & [options]]
+    (let [target-latlngs (float-array [(:lat query-data)
+                                       (:lng query-data)])
+          [n-y n-x _] (dtype/shape grid-latlngs)
+          weights (mapv (partial dfn/distance target-latlngs)
+                        (dtt/slice grid-latlngs 2))
+          weights (dfn/- 1 (dfn// weights (dfn/+ weights)))
+          ;;normalize weights
+          weights (dfn// weights (dfn/+ weights))]
+      (-> query-data
+          (dissoc :grid-latlngs :x-idx-range :y-idx-range
+                  :row :col)
+          (assoc :grid-data
+                 (->> grid-data
+                      (mapv (fn [{:keys [missing-value values] :as entry}]
+                              ;;flatten values out.
+                              (let [missing-value (float missing-value)]
+                                (-> (dissoc entry :values)
+                                    (assoc :value
+                                           (->> (binary-op/binary-reader
+                                                 :float32
+                                                 (if (= 0
+                                                        (Float/compare
+                                                         x
+                                                         (float missing-value)))
+                                                   0
+                                                   (* x y))
+                                                 values
+                                                 weights)
+                                                dfn/+))))))))))))
