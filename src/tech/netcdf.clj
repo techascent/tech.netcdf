@@ -184,6 +184,55 @@
 (def test-lat-lng [[21.145 237.307]])
 
 
+(defn serial-lat-lng->proj
+  "Serially project a sequence of lat-lng tuples to a projection.  Returns
+  a tuple if [^floats x-coords ^floats y-coords]"
+  [^ProjectionImpl projection ^java.util.List lat-lng-seq]
+  (let [n-elems (.size lat-lng-seq)
+        lat-ary (-> (reify FloatReader
+                      (lsize [_] n-elems)
+                      (read [_ idx] (first (.get lat-lng-seq idx))))
+                    (dtype/copy! (float-array n-elems)))
+        lng-ary (-> (reify FloatReader
+                      (lsize [_] n-elems)
+                      (read [_ idx] (second (.get lat-lng-seq idx))))
+                    (dtype/copy! (float-array n-elems)))
+        x-coords (float-array n-elems)
+        y-coords (float-array n-elems)]
+    (.latLonToProj projection
+                   ^"[[F" (into-array [lat-ary lng-ary])
+                   ^"[[F" (into-array [x-coords y-coords])
+                   0 1)
+    [x-coords y-coords]))
+
+
+(defn parallel-lat-lng->proj
+  [projection ^java.util.List lat-lng-seq]
+  (let [n-elems (.size lat-lng-seq)]
+    ;;It has to be worth combining these things back again.
+    (if (< n-elems 1000)
+      (serial-lat-lng->proj projection lat-lng-seq)
+      (let [n-cpus (+ 2 (.availableProcessors (Runtime/getRuntime)))
+            n-elems-per-list (quot n-elems n-cpus)
+            results
+            (->> (range n-cpus)
+                 (pmap
+                  (fn [cpu-idx]
+                    (let [cpu-idx (long cpu-idx)
+                          start-offset (* n-elems-per-list cpu-idx)
+                          end-offset (min (+ start-offset n-elems-per-list)
+                                          n-elems)]
+                      (serial-lat-lng->proj projection
+                                            (.subList lat-lng-seq
+                                                      start-offset
+                                                      end-offset))))))
+            x-coords (float-array n-elems)
+            y-coords (float-array n-elems)]
+        (dtype/copy-raw->item! (map first results) x-coords)
+        (dtype/copy-raw->item! (map second results) y-coords)
+        [x-coords y-coords]))))
+
+
 (defn lat-lng-query-grid-exact
   "Ignoring time, query a grid pointwise by lat-lon.  Returns only closest match.
   Takes a grid and a sequence of [lat lng] tuples.
@@ -195,7 +244,7 @@
    :level-desc \"Ground or water surface\",
    :level-type 1,
    :cell-lat-lngs - reader of [lat lng] tuples of the center points of the grid cells
-   :values - float32[n-elems]
+   :values - (float-array n-elems)
   }"
   [{:keys [coordinate-system name attributes data-reader] :as grid}
    lat-lon-seq & [options]]
@@ -212,20 +261,10 @@
                 (.getShape)
                 first
                 long)
-        lat-ary (-> (reify FloatReader
-                      (lsize [_] n-elems)
-                      (read [_ idx] (first (.get lat-lng-seq idx))))
-                    (dtype/copy! (float-array n-elems)))
-        lng-ary (-> (reify FloatReader
-                      (lsize [_] n-elems)
-                      (read [_ idx] (second (.get lat-lng-seq idx))))
-                    (dtype/copy! (float-array n-elems)))
-        x-coords (float-array n-elems)
-        y-coords (float-array n-elems)
-        _ (-> (.getProjection coordinate-system)
-              (.latLonToProj ^"[[F" (into-array [lat-ary lng-ary])
-                             ^"[[F" (into-array [x-coords y-coords])
-                             0 1))
+        [x-coords y-coords] (-> (.getProjection coordinate-system)
+                                (parallel-lat-lng->proj lat-lng-seq))
+        ^floats x-coords x-coords
+        ^floats y-coords y-coords
         x-idx (reify IntReader
                 (lsize [_] n-elems)
                 (read [_ idx]
