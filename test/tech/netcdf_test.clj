@@ -4,6 +4,7 @@
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype :as dtype]
             [tech.resource :as resource]
+            [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]))
 
 
@@ -44,7 +45,8 @@
   (try
     (let [grids (netcdf/fname->grids "./test/data/3600.grib2")
           lookup (-> (netcdf/lat-lng-query-grid-exact (first grids) [[21.145 237.307]
-                                                                     [21.145 237.307]])
+                                                                     [21.145 (- 237.307
+                                                                                360.0)]])
                      (dissoc :cell-lat-lngs :missing-value)
                      (update :values
                              (fn [values]
@@ -61,5 +63,24 @@
              lookup)))
     (catch java.io.FileNotFoundException e
       (println "File not found, maybe try: ./scripts/get_test_data.sh")
-      (throw e)))
-  )
+      (throw e))))
+
+
+(defn endless-lat-lng-stream
+  []
+  (->> (slurp "test/data/airport-summary.edn")
+       edn/read-string
+       repeat
+       (map shuffle)
+       (apply concat)
+       (map (juxt :lat :lng))))
+
+
+(deftest grib2-time-test
+  (let [grids (netcdf/fname->grids "./test/data/3600.grib2")
+        data (take 100000 (endless-lat-lng-stream))]
+    (dotimes [iter 5]
+      ;;Make sure everything is totally realized.
+      (time (-> (netcdf/lat-lng-query-grid-exact (first grids) data)
+                :values
+                count)))))

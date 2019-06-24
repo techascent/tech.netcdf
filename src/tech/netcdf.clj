@@ -234,11 +234,10 @@
                 (lsize [_] n-elems)
                 (read [_ idx]
                   (.findCoordElementBounded y-axis (aget y-coords idx))))
-        cell-tens (-> (dtype/object-reader
+        cell-lat-lngs (dtype/object-reader
                        n-elems
                        (fn [idx]
-                         (let [idx (long idx)
-                               ll (.getLatLon coordinate-system
+                         (let [ll (.getLatLon coordinate-system
                                               (.read x-idx idx)
                                               (.read y-idx idx))
                                lng (.getLongitude ll)]
@@ -246,7 +245,6 @@
                             (if (< lng 0)
                               (+ lng 360.0)
                               lng)])))
-                      (dtt/->tensor :datatype :float32))
         ^FloatTensorReader data-reader data-reader
         values (-> (reify FloatReader
                      (lsize [_] n-elems)
@@ -258,7 +256,7 @@
      :abbreviation (get-in attributes ["abbreviation" :value])
      :level-desc (get-in attributes ["Grib2_Level_Desc" :value])
      :level-type (get-in attributes ["Grib2_Level_Type" :value])
-     :cell-lat-lngs (when-not (:skip-cell-lat-lngs options) (dtt/clone cell-tens))
+     :cell-lat-lngs cell-lat-lngs
      :values values}))
 
 
