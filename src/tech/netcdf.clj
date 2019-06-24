@@ -194,7 +194,7 @@
    :abbreviation \"TMP\",
    :level-desc \"Ground or water surface\",
    :level-type 1,
-   :cell-lat-lngs - tensor<float32>[n-elems 2] - lat-lng tensor of cell centers.
+   :cell-lat-lngs - reader of [lat lng] tuples of the center points of the grid cells
    :values - float32[n-elems]
   }"
   [{:keys [coordinate-system name attributes data-reader] :as grid}
