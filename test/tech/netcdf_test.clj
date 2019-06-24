@@ -49,9 +49,9 @@
                      (update :values
                              (fn [values]
                                (->> values
-                                    (dtype/reader-map #(-> (* % 100)
-                                                           (Math/round)
-                                                           long))
+                                    (map #(-> (* % 100)
+                                              (Math/round)
+                                              long))
                                     vec))))]
       (is (= {:fullname "Temperature_surface"
               :abbreviation "TMP"
