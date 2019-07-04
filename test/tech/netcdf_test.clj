@@ -44,9 +44,10 @@
 (deftest grib2-lat-lon-lookup
   (try
     (let [grids (netcdf/fname->grids "./test/data/3600.grib2")
-          lookup (-> (netcdf/lat-lng-query-grid-exact (first grids) [[21.145 237.307]
-                                                                     [21.145 (- 237.307
-                                                                                360.0)]])
+          lookup (-> (netcdf/lat-lng-query-grid-exact (first grids)
+                                                      [[21.145 237.307]
+                                                       [21.145 (- 237.307
+                                                                  360.0)]])
                      (dissoc :cell-lat-lngs :missing-value)
                      (update :values
                              (fn [values]

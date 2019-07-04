@@ -173,9 +173,7 @@
                         {:name (.getName %)
                          :attributes atts
                          :data data
-                         :data-reader (dtt-typecast/->float32-reader
-                                       data
-                                       false)
+                         :data-reader (dtt-typecast/->float32-reader data)
                          :coordinate-system (.getGeoCoordSystem gridset)}))))))
            vec))))
 
