@@ -131,8 +131,9 @@
    :data-reader FloatTensorReader (allows arbitrary indexing and ad-hoc algorithms)
   }
   "
-  [fname & {:keys [time-axis z-axis fill-value datatype]
-            :or {time-axis 0 z-axis 0 datatype :float32}}]
+  [fname & {:keys [time-axis z-axis fill-value datatype container-type]
+            :or {time-axis 0 z-axis 0 datatype :float32
+                 container-type :java-array}}]
   (resource/stack-resource-context
    (let [netcdf (fname->netcdf fname)
          ;;True stands for 'enhanced'.
@@ -169,7 +170,7 @@
                                      ;; buffer tensor.
                                      (dtt/clone
                                       :datatype datatype
-                                      :container-type :native-buffer))]
+                                      :container-type container-type))]
                         {:name (.getName %)
                          :attributes atts
                          :data data
