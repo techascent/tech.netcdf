@@ -17,8 +17,8 @@
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
-           [tech.v2.datatype IntReader FloatReader]
-           ))
+           [tech.v2.datatype IntReader FloatReader]))
+
 
 (set! *warn-on-reflection* true)
 
@@ -107,7 +107,7 @@
   (->> (variables netcdf)
        vals
        (map (fn [{:keys [attributes dimensions] :as vardata}]
-              (assoc (select-keys vardata [:name :shape :data])
+              (assoc (select-keys vardata [:name :shape :data :datatype])
                      :shape-names (mapv :name dimensions)
                      :fullname (get-in attributes ["standard_name" :value]
                                        (:name vardata))
