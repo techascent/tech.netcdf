@@ -9,7 +9,9 @@
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.unary-op :as unary-op]
-            [tech.v2.datatype.boolean-op :as boolean-op])
+            [tech.v2.datatype.boolean-op :as boolean-op]
+            [tech.v2.datatype.readers.indexed :as indexed-rdr]
+            [clojure.pprint :as pp])
   (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
            [ucar.unidata.geoloc ProjectionImpl LatLonRect]
@@ -114,6 +116,97 @@
                      :units (get-in attributes ["units" :value])
                      :missing-value (get-in attributes ["missing_value" :value]))))
        named-item->map))
+
+
+(defmulti format-data-sequence
+  (fn [datatype data-seq]
+    datatype))
+
+
+(defmethod format-data-sequence :default
+  [datatype data-seq]
+  (str (vec data-seq)))
+
+
+(defmethod format-data-sequence :float
+  [datatype data-seq]
+  (str (mapv #(format "%3.2e" %) data-seq)))
+
+
+(defmethod format-data-sequence :double
+  [datatype data-seq]
+  (str (mapv #(format "%3.2e" %) data-seq)))
+
+
+(defn format-scalar
+  [dtype s-val]
+  (when s-val
+    (format-data-sequence dtype [s-val])))
+
+
+(defn- elipsoid
+  [str-value ^long num-digits]
+  (when (string? str-value)
+    (if (>= (count str-value) num-digits)
+      (str (.substring ^String str-value 0 7) "...")
+      str-value)))
+
+
+(defn valid-data-indexes
+  [data fill-val missing-val]
+  (let [fill-val (double (or fill-val missing-val))
+        missing-val (double (or missing-val fill-val))
+        ddata (dtype/->reader data :float64)]
+    (-> (dfn/argfilter
+         (boolean-op/make-boolean-unary-op
+          :float64
+          (not (or (= 0 (Double/compare fill-val x))
+                   (= 0 (Double/compare missing-val x)))))
+         ddata)
+        long-array)))
+
+
+(defn valid-data
+  [data fill-val missing-val]
+  (if (and data (or fill-val missing-val))
+    (let [indexes (valid-data-indexes data fill-val missing-val)]
+      (indexed-rdr/make-indexed-reader indexes data {}))
+    (dtype/->reader data)))
+
+
+(defn print-variable-table
+  [netcdf & {:keys [return-varmap?]}]
+  (resource/stack-resource-context
+   (let [ncfile (if (string? netcdf)
+                  (fname->netcdf netcdf)
+                  netcdf)
+         vars (->> (vals (variables ncfile))
+                   (sort-by :name))
+         varmap
+         (->> vars
+              (map (fn [{:keys [datatype shape name attributes data]}]
+                     (let [vdata (valid-data @data
+                                             (get-in attributes
+                                                     ["_FillValue" :value])
+                                             (get-in attributes
+                                                     ["missing_value" :value]))]
+                       {:name name
+                        :datatype datatype
+                        :shape shape
+                        :vdata vdata
+                        :units (-> (get-in attributes ["units" :value])
+                                   (elipsoid 12))
+                        :valid-ecount (dtype/ecount vdata)
+                        :example-values
+                        (try (->> vdata
+                                  (take 3)
+                                  (format-data-sequence datatype))
+                             (catch Throwable e (format "Error: %s" e)))}))))]
+     (pp/print-table [:name :units :datatype :shape
+                      :valid-ecount :example-values] varmap)
+     (if return-varmap?
+       varmap
+       :ok))))
 
 
 (defn fname->grids
@@ -296,53 +389,3 @@
      :level-type (get-in attributes ["Grib2_Level_Type" :value])
      :cell-lat-lngs cell-lat-lngs
      :values values}))
-
-
-(comment
-  (defn distance-lerp-lat-lon-query
-    "Return weighted average of all values by distance.  If options contains
-  :fill-value and one of the values is equal to the entry missing value, fill-value
-  will be used instead.  If fill value is not provided, then 0 is used.  This will
-  lower your average temp.
-
-  tech.netcdf> (distance-lerp-lat-lon-query (first query))
-  {:lat 21.145
-  :lng 237.307
-  :grid-data
-  [{:missing-value ##NaN
-   :fullname \"Temperature_surface\"
-   :abbreviation \"TMP\"
-   :level-desc \"Ground or water surface\"
-   :level-type 1
-   :value 296.20944}]}"
-    [{:keys [lat lng grid-latlngs grid-data] :as query-data}
-     & [options]]
-    (let [target-latlngs (float-array [(:lat query-data)
-                                       (:lng query-data)])
-          [n-y n-x _] (dtype/shape grid-latlngs)
-          weights (mapv (partial dfn/distance target-latlngs)
-                        (dtt/slice grid-latlngs 2))
-          weights (dfn/- 1 (dfn// weights (dfn/+ weights)))
-          ;;normalize weights
-          weights (dfn// weights (dfn/+ weights))]
-      (-> query-data
-          (dissoc :grid-latlngs :x-idx-range :y-idx-range
-                  :row :col)
-          (assoc :grid-data
-                 (->> grid-data
-                      (mapv (fn [{:keys [missing-value values] :as entry}]
-                              ;;flatten values out.
-                              (let [missing-value (float missing-value)]
-                                (-> (dissoc entry :values)
-                                    (assoc :value
-                                           (->> (binary-op/binary-reader
-                                                 :float32
-                                                 (if (= 0
-                                                        (Float/compare
-                                                         x
-                                                         (float missing-value)))
-                                                   0
-                                                   (* x y))
-                                                 values
-                                                 weights)
-                                                dfn/+))))))))))))
