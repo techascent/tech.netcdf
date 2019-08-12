@@ -305,7 +305,7 @@
     (if (< n-elems 1000)
       (serial-lat-lng->proj projection lat-lng-seq)
       (let [n-cpus (+ 2 (.availableProcessors (Runtime/getRuntime)))
-            n-elems-per-list (quot n-elems n-cpus)
+            n-elems-per-list (+ 1 (quot n-elems n-cpus))
             results
             (->> (range n-cpus)
                  (pmap
