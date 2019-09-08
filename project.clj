@@ -1,4 +1,4 @@
-(defproject techascent/tech.netcdf "0.35"
+(defproject techascent/tech.netcdf "0.36-SNAPSHOT"
   :description "netcdf bindings for tech ecosystem."
   :url "http://github.com/techascent/tech.netcdf"
   :license {:name "EPL-2.0"
