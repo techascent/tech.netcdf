@@ -12,3 +12,4 @@ pom.xml.asc
 .hg/
 .cpcache
 test/data
+.clj-kondo/.cache

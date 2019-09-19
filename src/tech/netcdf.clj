@@ -1,13 +1,10 @@
 (ns tech.netcdf
   (:require [tech.v2.datatype :as dtype]
             [tech.resource :as resource]
-            [camel-snake-kebab.core :refer [->kebab-case]]
             [tech.libs.netcdf :as lib-netcdf]
             [tech.v2.tensor :as dtt]
             [tech.v2.tensor.typecast :as dtt-typecast]
-            [tech.v2.datatype.typecast :as dtype-typecast]
             [tech.v2.datatype.functional :as dfn]
-            [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.unary-op :as unary-op]
             [tech.v2.datatype.boolean-op :as boolean-op]
             [tech.v2.datatype.readers.indexed :as indexed-rdr]
@@ -119,22 +116,22 @@
 
 
 (defmulti format-data-sequence
-  (fn [datatype data-seq]
+  (fn [datatype _data-seq]
     datatype))
 
 
 (defmethod format-data-sequence :default
-  [datatype data-seq]
+  [_datatype data-seq]
   (str (vec data-seq)))
 
 
 (defmethod format-data-sequence :float
-  [datatype data-seq]
+  [_datatype data-seq]
   (str (mapv #(format "%3.2e" %) data-seq)))
 
 
 (defmethod format-data-sequence :double
-  [datatype data-seq]
+  [_datatype data-seq]
   (str (mapv #(format "%3.2e" %) data-seq)))
 
 
@@ -338,21 +335,13 @@
    :cell-lat-lngs - reader of [lat lng] tuples of the center points of the grid cells
    :values - (float-array n-elems)
   }"
-  [{:keys [coordinate-system name attributes data-reader] :as grid}
-   lat-lon-seq & [options]]
+  [{:keys [coordinate-system name attributes data-reader]}
+   lat-lon-seq]
   (let [^java.util.List lat-lng-seq (vec lat-lon-seq)
         n-elems (count lat-lng-seq)
         ^GridCoordSystem coordinate-system coordinate-system
         ^CoordinateAxis1D x-axis (.getXHorizAxis coordinate-system)
         ^CoordinateAxis1D y-axis (.getYHorizAxis coordinate-system)
-        n-x (-> x-axis
-                (.getShape)
-                first
-                long)
-        n-y (-> y-axis
-                (.getShape)
-                first
-                long)
         [x-coords y-coords] (-> (.getProjection coordinate-system)
                                 (parallel-lat-lng->proj lat-lng-seq))
         ^floats x-coords x-coords

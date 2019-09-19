@@ -1,10 +1,7 @@
 (ns tech.libs.netcdf
   (:require [tech.v2.datatype.protocols :as dtype-proto]
             [camel-snake-kebab.core :refer [->kebab-case]]
-            [tech.jna :as jna]
             [tech.v2.datatype.casting :as casting]
-            [tech.v2.datatype.reader :as reader]
-            [tech.v2.datatype.writer :as writer]
             [tech.v2.datatype.base :as dtype-base])
   (:import [ucar.ma2 Array DataType]
            [tech.v2.datatype
