@@ -1,7 +1,7 @@
 {:paths ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.10.1"}
         org.clojure/tools.reader {:mvn/version "1.1.1"}
-        techascent/tech.datatype {:mvn/version "4.15"}
+        techascent/tech.datatype {:mvn/version "4.16"}
         joda-time {:mvn/version "2.9.9"}
         commons-codec {:mvn/version "1.11"}
         com.fasterxml.jackson.dataformat/jackson-dataformat-cbor {:mvn/version "2.9.6"}
