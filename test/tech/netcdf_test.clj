@@ -1,4 +1,4 @@
-(ns tech.netcdf-test
+3(ns tech.netcdf-test
   (:require [tech.netcdf :as netcdf]
             [tech.v2.tensor :as dtt]
             [tech.v2.datatype.functional :as dfn]
