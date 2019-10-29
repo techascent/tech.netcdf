@@ -1,4 +1,4 @@
-(defproject techascent/tech.netcdf "0.48-SNAPSHOT"
+(defproject techascent/tech.netcdf "0.48"
   :description "netcdf bindings for tech ecosystem."
   :url "http://github.com/techascent/tech.netcdf"
   :license {:name "EPL-2.0"
@@ -7,4 +7,5 @@
   :middleware [lein-tools-deps.plugin/resolve-dependencies-with-deps-edn]
   :lein-tools-deps/config {:config-files [:install :user :project]}
   :profiles {:dev {:dependencies [[org.slf4j/slf4j-nop "1.7.25"]]}}
+  :java-source-paths ["java"]
   :repositories {"boundlessgeo" "https://repo.boundlessgeo.com/artifactory/ucar-cache"})
