@@ -2,7 +2,6 @@
   (:require [tech.netcdf :as netcdf]
             [tech.v2.tensor :as dtt]
             [tech.v2.datatype.functional :as dfn]
-            [tech.v2.datatype.binary-op :as bin-op]
             [tech.v2.datatype :as dtype]
             [tech.resource :as resource]
             [clojure.edn :as edn]
@@ -89,8 +88,7 @@
                                                              lat-lng-data)
                             :values)
             lininterp-query-fn (netcdf/setup-linear-interpolator
-                                grid grid
-                                (:* bin-op/builtin-binary-ops))
+                                grid grid)
             precalc-query (query-fn lat-lng-data)
             lininterp-query (lininterp-query-fn lat-lng-data 0.5 0.5)]
         (is (dfn/equals exact-query precalc-query))
@@ -102,8 +100,7 @@
 
 (deftest linear-interpolator-test
   (let [grid (first (netcdf/fname->grids "./test/data/3600.grib2"))
-        interpolator (netcdf/setup-linear-interpolator grid grid
-                                                       (:* bin-op/builtin-binary-ops))
+        interpolator (netcdf/setup-linear-interpolator grid grid)
         values (->> (interpolator [[21.145 237.307]
                                    [21.145 (- 237.307
                                               360.0)]]

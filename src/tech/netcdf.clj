@@ -8,7 +8,6 @@
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.unary-op :as unary-op]
             [tech.v2.datatype.boolean-op :as boolean-op]
-            [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.readers.indexed :as indexed-rdr]
             [tech.v2.datatype.readers.const :as const-rdr]
             [clojure.pprint :as pp])
@@ -19,7 +18,8 @@
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
-           [tech.v2.datatype IntReader FloatReader]))
+           [tech.v2.datatype IntReader FloatReader]
+           [tech.netcdf LerpOp]))
 
 
 (set! *warn-on-reflection* true)
@@ -470,9 +470,23 @@
                 (.read2d data grid-idx-y grid-idx-x)))))))))
 
 
+(def default-lerp-op
+  (reify LerpOp
+    (lerp [this lhs-weight lhs rhs-weight rhs]
+      (+ (* lhs-weight lhs)
+         (* rhs-weight rhs)))))
+
+
+(defn- to-lerp-op
+  ^LerpOp [item]
+  (if (instance? LerpOp item)
+    item
+    (throw (Exception. (format "Op is not a lerp op: %s" (type item))))))
+
+
 (defn setup-linear-interpolator
-  [lhs-grid rhs-grid & [weight-fn]]
-  (let [weight-fn (or weight-fn (:* binary-op/builtin-binary-ops))
+  [lhs-grid rhs-grid & [lerp-op]]
+  (let [lerp-op (to-lerp-op (or lerp-op default-lerp-op))
         ^CoordinateSystem lhs-coords (:coordinate-system lhs-grid)
         ^CoordinateSystem rhs-coords (:coordinate-system rhs-grid)
         lhs-proj (.getProjection lhs-coords)
@@ -488,8 +502,7 @@
         rhs-axis-data [(first rhs-x-coords) (first rhs-y-coords)
                        (last rhs-x-coords) (last rhs-y-coords)]
         lhs-data (dtt-typecast/->float32-reader (:data lhs-grid))
-        rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))
-        weight-fn (binary-op/datatype->binary-op :float32 weight-fn)]
+        rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))]
     ;;fastpath for same projection and both regular projections.
     (if (and (= lhs-proj rhs-proj)
                (every? #(.isRegular ^CoordinateAxis1D %)
@@ -541,11 +554,11 @@
                                      long
                                      (min nn-y)
                                      (max 0))]
-                  (+
-                   (.op weight-fn (.read lhs-weights idx)
-                        (.read2d lhs-data grid-idx-y grid-idx-x))
-                   (.op weight-fn (.read rhs-weights idx)
-                        (.read2d rhs-data grid-idx-y grid-idx-x)))))))))
+                  (.lerp lerp-op
+                         (.read lhs-weights idx)
+                         (.read2d lhs-data grid-idx-y grid-idx-x)
+                         (.read rhs-weights idx)
+                         (.read2d rhs-data grid-idx-y grid-idx-x))))))))
       (fn [lat-lng-seq lhs-weights rhs-weights]
         (let [^java.util.List lat-lng-seq (if (instance? java.util.List
                                                             lat-lng-seq)
@@ -579,8 +592,8 @@
                                                              (.getX proj-point))
                       rhs-y-idx (.findCoordElementBounded rhs-y-axis
                                                           (.getY proj-point))]
-                  (+
-                   (.op weight-fn (.read lhs-weights idx)
-                        (.read2d lhs-data lhs-y-idx lhs-x-idx))
-                   (.op weight-fn (.read rhs-weights idx)
-                        (.read2d rhs-data rhs-y-idx rhs-x-idx)))))))))))
+                  (.lerp lerp-op
+                         (.read lhs-weights idx)
+                         (.read2d lhs-data lhs-y-idx lhs-x-idx)
+                         (.read rhs-weights idx)
+                         (.read2d rhs-data rhs-y-idx rhs-x-idx))))))))))
