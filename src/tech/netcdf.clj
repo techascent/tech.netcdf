@@ -465,7 +465,6 @@
               data (dtt-typecast/->float32-reader (:data grid))
               x-axis (coord-1d x-axis)
               y-axis (coord-1d y-axis)]
-          (println "fallback!!")
           (reify FloatReader
             (lsize [rdr] n-elems)
             (read [rdr idx]
