@@ -19,7 +19,8 @@
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
            [tech.v2.datatype IntReader FloatReader]
-           [tech.netcdf LerpOp]))
+           [tech.netcdf LerpOp]
+           [java.util List RandomAccess]))
 
 
 (set! *warn-on-reflection* true)
@@ -276,11 +277,19 @@
 (def test-lat-lng [[21.145 237.307]])
 
 
+(defn- to-rand-access
+  ^List [item]
+  (if (instance? RandomAccess item)
+    item
+    (vec item)))
+
+
 (defn serial-lat-lng->proj
   "Serially project a sequence of lat-lng tuples to a projection.  Returns
   a tuple if [^floats x-coords ^floats y-coords]"
-  [^ProjectionImpl projection ^java.util.List lat-lng-seq]
-  (let [n-elems (.size lat-lng-seq)
+  [^ProjectionImpl projection lat-lng-seq]
+  (let [lat-lng-seq (to-rand-access lat-lng-seq)
+        n-elems (.size lat-lng-seq)
         lat-ary (-> (reify FloatReader
                       (lsize [_] n-elems)
                       (read [_ idx] (first (.get lat-lng-seq idx))))
@@ -299,8 +308,9 @@
 
 
 (defn parallel-lat-lng->proj
-  [projection ^java.util.List lat-lng-seq]
-  (let [n-elems (.size lat-lng-seq)]
+  [projection lat-lng-seq]
+  (let [lat-lng-seq (to-rand-access lat-lng-seq)
+        n-elems (.size lat-lng-seq)]
     ;;It has to be worth combining these things back again.
     (if (< n-elems 1000)
       (serial-lat-lng->proj projection lat-lng-seq)
@@ -340,7 +350,7 @@
   }"
   [{:keys [coordinate-system name attributes data-reader]}
    lat-lon-seq]
-  (let [^java.util.List lat-lng-seq (vec lat-lon-seq)
+  (let [lat-lng-seq (to-rand-access lat-lon-seq)
         n-elems (count lat-lng-seq)
         ^GridCoordSystem coordinate-system coordinate-system
         ^CoordinateAxis1D x-axis (.getXHorizAxis coordinate-system)
@@ -425,15 +435,14 @@
             y-mult (/ nn-y y-range)
             data (dtt-typecast/->float32-reader (:data grid))]
         (fn [lat-lng-seq]
-          (let [^java.util.List lat-lng-seq (if (instance? java.util.List
-                                                            lat-lng-seq)
-                                               lat-lng-seq
-                                               (vec lat-lng-seq))
+          (let [lat-lng-seq (to-rand-access lat-lng-seq)
                 n-elems (.size lat-lng-seq)]
             (reify FloatReader
               (lsize [rdr] n-elems)
               (read [rdr idx]
-                (let [[lat lng] (.get lat-lng-seq idx)
+                (let [^List entry (.get lat-lng-seq idx)
+                      lat (.get entry 0)
+                      lng (.get entry 1)
                       proj-point (.latLonToProj proj (LatLonPointImpl.
                                                       (double lat)
                                                       (double lng)))
@@ -451,14 +460,12 @@
                                      (max 0))]
                   (.read2d data grid-idx-y grid-idx-x)))))))
       (fn [lat-lng-seq]
-        (let [^java.util.List lat-lng-seq (if (instance? java.util.List
-                                                            lat-lng-seq)
-                                               lat-lng-seq
-                                               (vec lat-lng-seq))
+        (let [lat-lng-seq (to-rand-access lat-lng-seq)
               n-elems (.size lat-lng-seq)
               data (dtt-typecast/->float32-reader (:data grid))
               x-axis (coord-1d x-axis)
               y-axis (coord-1d y-axis)]
+          (println "fallback!!")
           (reify FloatReader
             (lsize [rdr] n-elems)
             (read [rdr idx]
@@ -524,10 +531,7 @@
             x-mult (/ nn-x x-range)
             y-mult (/ nn-y y-range)]
         (fn [lat-lng-seq lhs-weights rhs-weights]
-          (let [^java.util.List lat-lng-seq (if (instance? java.util.List
-                                                            lat-lng-seq)
-                                               lat-lng-seq
-                                               (vec lat-lng-seq))
+          (let [lat-lng-seq (to-rand-access lat-lng-seq)
                 n-elems (.size lat-lng-seq)
                 lhs-weights (if (number? lhs-weights)
                               (const-rdr/make-const-reader lhs-weights :float32)
@@ -562,10 +566,7 @@
                          (.read rhs-weights idx)
                          (.read2d rhs-data grid-idx-y grid-idx-x))))))))
       (fn [lat-lng-seq lhs-weights rhs-weights]
-        (let [^java.util.List lat-lng-seq (if (instance? java.util.List
-                                                            lat-lng-seq)
-                                               lat-lng-seq
-                                               (vec lat-lng-seq))
+        (let [lat-lng-seq (to-rand-access lat-lng-seq)
               n-elems (.size lat-lng-seq)
               lhs-weights (if (number? lhs-weights)
                             (const-rdr/make-const-reader lhs-weights :float32)
