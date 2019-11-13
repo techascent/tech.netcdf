@@ -10,6 +10,7 @@
             [tech.v2.datatype.boolean-op :as boolean-op]
             [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.readers.indexed :as indexed-rdr]
+            [tech.v2.datatype.readers.const :as const-rdr]
             [clojure.pprint :as pp])
   (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D CoordinateSystem]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
@@ -513,6 +514,12 @@
                                                lat-lng-seq
                                                (vec lat-lng-seq))
                 n-elems (.size lat-lng-seq)
+                lhs-weights (if (number? lhs-weights)
+                              (const-rdr/make-const-reader lhs-weights :float32)
+                              lhs-weights)
+                rhs-weights (if (number? rhs-weights)
+                              (const-rdr/make-const-reader rhs-weights :float32)
+                              lhs-weights)
                 lhs-weights (typecast/datatype->reader :float32 lhs-weights)
                 rhs-weights (typecast/datatype->reader :float32 rhs-weights)]
             (reify FloatReader
@@ -545,6 +552,12 @@
                                                lat-lng-seq
                                                (vec lat-lng-seq))
               n-elems (.size lat-lng-seq)
+              lhs-weights (if (number? lhs-weights)
+                            (const-rdr/make-const-reader lhs-weights :float32)
+                            lhs-weights)
+              rhs-weights (if (number? rhs-weights)
+                            (const-rdr/make-const-reader rhs-weights :float32)
+                            lhs-weights)
               lhs-weights (typecast/datatype->reader :float32 lhs-weights)
               rhs-weights (typecast/datatype->reader :float32 rhs-weights)
               lhs-x-axis (coord-1d (.getXaxis lhs-coords))

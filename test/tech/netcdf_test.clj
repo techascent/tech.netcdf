@@ -4,7 +4,6 @@
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.binary-op :as bin-op]
             [tech.v2.datatype :as dtype]
-            [tech.v2.datatype.readers.const :as const-rdr]
             [tech.resource :as resource]
             [clojure.edn :as edn]
             [clojure.test :refer [deftest is]])
@@ -93,11 +92,7 @@
                                 grid grid
                                 (:* bin-op/builtin-binary-ops))
             precalc-query (query-fn lat-lng-data)
-            lininterp-query (lininterp-query-fn lat-lng-data
-                                                (const-rdr/make-const-reader 0.5
-                                                                             :float32)
-                                                (const-rdr/make-const-reader 0.5
-                                                                             :float32))]
+            lininterp-query (lininterp-query-fn lat-lng-data 0.5 0.5)]
         (is (dfn/equals exact-query precalc-query))
         (is (dfn/equals exact-query lininterp-query))))
     (catch java.io.FileNotFoundException e
@@ -112,10 +107,7 @@
         values (->> (interpolator [[21.145 237.307]
                                    [21.145 (- 237.307
                                               360.0)]]
-                                  (const-rdr/make-const-reader 0.5
-                                                               :float32)
-                                  (const-rdr/make-const-reader 0.5
-                                                               :float32))
+                                  0.5 0.5)
                     (map #(-> (* % 100)
                               (Math/round)
                               long))
@@ -154,9 +146,5 @@
                   (first grids))]
     (dotimes [iter 5]
       ;;Make sure everything is totally realized.
-      (time (-> (query-fn data
-                          (const-rdr/make-const-reader 0.5
-                                                       :float32)
-                          (const-rdr/make-const-reader 0.5
-                                                       :float32))
+      (time (-> (query-fn data 0.5 0.5)
                 (dtype/copy! (float-array (count data))))))))
