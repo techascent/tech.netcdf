@@ -1,5 +1,6 @@
 (ns tech.netcdf
   (:require [tech.v2.datatype :as dtype]
+            [tech.v2.datatype.typecast :as typecast]
             [tech.resource :as resource]
             [tech.libs.netcdf :as lib-netcdf]
             [tech.v2.tensor :as dtt]
@@ -7,11 +8,12 @@
             [tech.v2.datatype.functional :as dfn]
             [tech.v2.datatype.unary-op :as unary-op]
             [tech.v2.datatype.boolean-op :as boolean-op]
+            [tech.v2.datatype.binary-op :as binary-op]
             [tech.v2.datatype.readers.indexed :as indexed-rdr]
             [clojure.pprint :as pp])
-  (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D]
+  (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D CoordinateSystem]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
-           [ucar.unidata.geoloc ProjectionImpl LatLonRect]
+           [ucar.unidata.geoloc ProjectionImpl LatLonRect LatLonPointImpl]
            [ucar.nc2.dt.grid GridDataset GridDataset$Gridset]
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
@@ -378,3 +380,194 @@
      :level-type (get-in attributes ["Grib2_Level_Type" :value])
      :cell-lat-lngs cell-lat-lngs
      :values values}))
+
+
+(defn- get-field
+  [item fname]
+  (let [field (doto (.getDeclaredField ^Class (type item) fname)
+                (.setAccessible true))]
+    (.get field item)))
+
+(defn- coord-1d
+  ^CoordinateAxis1D [item]
+  (if (instance? CoordinateAxis1D item)
+    item
+    (throw (Exception. (format "Axis is not a coord1d axis: %s" (type item))))))
+
+
+(defn setup-nearest-projection
+  [grid]
+  (let [^CoordinateSystem coords (:coordinate-system grid)
+        proj (.getProjection coords)
+        x-axis (.getXaxis coords)
+        y-axis (.getYaxis coords)
+        x-coords (when x-axis (get-field x-axis "coords"))
+        y-coords (when y-axis (get-field y-axis "coords"))]
+    (if (and (instance? CoordinateAxis1D x-axis)
+             (instance? CoordinateAxis1D y-axis)
+             (.isRegular ^CoordinateAxis1D x-axis)
+             (.isRegular ^CoordinateAxis1D y-axis)
+             x-coords
+             y-coords)
+      (let [x-min (double (first x-coords))
+            x-max (double (last x-coords))
+            n-x (count x-coords)
+            nn-x (dec n-x)
+            y-min (double (first y-coords))
+            y-max (double (last y-coords))
+            n-y (count y-coords)
+            nn-y (dec n-y)
+            x-range (- x-max x-min)
+            y-range (- y-max y-min)
+            x-mult (/ nn-x x-range)
+            y-mult (/ nn-y y-range)
+            data (dtt-typecast/->float32-reader (:data grid))]
+        (fn [lat-lng-seq]
+          (let [^java.util.List lat-lng-seq (if (instance? java.util.List
+                                                            lat-lng-seq)
+                                               lat-lng-seq
+                                               (vec lat-lng-seq))
+                n-elems (.size lat-lng-seq)]
+            (reify FloatReader
+              (lsize [rdr] n-elems)
+              (read [rdr idx]
+                (let [[lat lng] (.get lat-lng-seq idx)
+                      proj-point (.latLonToProj proj (LatLonPointImpl.
+                                                      (double lat)
+                                                      (double lng)))
+                      grid-idx-x (-> (- (.getX proj-point) x-min)
+                                     (* x-mult)
+                                     (Math/round)
+                                     long
+                                     (min nn-x)
+                                     (max 0))
+                      grid-idx-y (-> (- (.getY proj-point) y-min)
+                                     (* y-mult)
+                                     (Math/round)
+                                     long
+                                     (min nn-y)
+                                     (max 0))]
+                  (.read2d data grid-idx-y grid-idx-x)))))))
+      (fn [lat-lng-seq]
+        (let [^java.util.List lat-lng-seq (if (instance? java.util.List
+                                                            lat-lng-seq)
+                                               lat-lng-seq
+                                               (vec lat-lng-seq))
+              n-elems (.size lat-lng-seq)
+              data (dtt-typecast/->float32-reader (:data grid))
+              x-axis (coord-1d x-axis)
+              y-axis (coord-1d y-axis)]
+          (reify FloatReader
+            (lsize [rdr] n-elems)
+            (read [rdr idx]
+              (let [[lat lng] (.get lat-lng-seq idx)
+                    proj-point (.latLonToProj proj (LatLonPointImpl.
+                                                    (double lat)
+                                                    (double lng)))
+                    grid-idx-x (.findCoordElementBounded x-axis (.getX proj-point))
+                    grid-idx-y (.findCoordElementBounded y-axis (.getY proj-point))]
+                (.read2d data grid-idx-y grid-idx-x)))))))))
+
+
+(defn setup-linear-interpolator
+  [lhs-grid rhs-grid & [weight-fn]]
+  (let [weight-fn (or weight-fn (:* binary-op/builtin-binary-ops))
+        ^CoordinateSystem lhs-coords (:coordinate-system lhs-grid)
+        ^CoordinateSystem rhs-coords (:coordinate-system rhs-grid)
+        lhs-proj (.getProjection lhs-coords)
+        rhs-proj (.getProjection rhs-coords)
+        lhs-axis [(.getXaxis lhs-coords) (.getYaxis lhs-coords)]
+        rhs-axis [(.getXaxis rhs-coords) (.getYaxis rhs-coords)]
+        lhs-x-coords (get-field (first lhs-axis) "coords")
+        lhs-y-coords (get-field (second lhs-axis) "coords")
+        rhs-x-coords (get-field (first rhs-axis) "coords")
+        rhs-y-coords (get-field (second rhs-axis) "coords")
+        lhs-axis-data [(first lhs-x-coords) (first lhs-y-coords)
+                       (last lhs-x-coords) (last lhs-y-coords)]
+        rhs-axis-data [(first rhs-x-coords) (first rhs-y-coords)
+                       (last rhs-x-coords) (last rhs-y-coords)]
+        lhs-data (dtt-typecast/->float32-reader (:data lhs-grid))
+        rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))
+        weight-fn (binary-op/datatype->binary-op :float32 weight-fn)]
+    ;;fastpath for same projection and both regular projections.
+    (if (and (= lhs-proj rhs-proj)
+               (every? #(.isRegular ^CoordinateAxis1D %)
+                       (concat lhs-axis rhs-axis))
+               (dfn/equals lhs-axis-data rhs-axis-data))
+      (let [[x-min y-min x-max y-max] lhs-axis-data
+            x-min (double x-min)
+            y-min (double y-min)
+            x-max (double x-max)
+            y-max (double y-max)
+            x-range (- x-max x-min)
+            y-range (- y-max y-min)
+            n-x (count lhs-x-coords)
+            n-y (count lhs-y-coords)
+            nn-x (dec n-x)
+            nn-y (dec n-y)
+            x-mult (/ nn-x x-range)
+            y-mult (/ nn-y y-range)]
+        (fn [lat-lng-seq lhs-weights rhs-weights]
+          (let [^java.util.List lat-lng-seq (if (instance? java.util.List
+                                                            lat-lng-seq)
+                                               lat-lng-seq
+                                               (vec lat-lng-seq))
+                n-elems (.size lat-lng-seq)
+                lhs-weights (typecast/datatype->reader :float32 lhs-weights)
+                rhs-weights (typecast/datatype->reader :float32 rhs-weights)]
+            (reify FloatReader
+              (lsize [rdr] n-elems)
+              (read [rdr idx]
+                (let [[lat lng] (.get lat-lng-seq idx)
+                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl.
+                                                          (double lat)
+                                                          (double lng)))
+                      grid-idx-x (-> (- (.getX proj-point) x-min)
+                                     (* x-mult)
+                                     (Math/round)
+                                     long
+                                     (min nn-x)
+                                     (max 0))
+                      grid-idx-y (-> (- (.getY proj-point) y-min)
+                                     (* y-mult)
+                                     (Math/round)
+                                     long
+                                     (min nn-y)
+                                     (max 0))]
+                  (+
+                   (.op weight-fn (.read lhs-weights idx)
+                        (.read2d lhs-data grid-idx-y grid-idx-x))
+                   (.op weight-fn (.read rhs-weights idx)
+                        (.read2d rhs-data grid-idx-y grid-idx-x)))))))))
+      (fn [lat-lng-seq lhs-weights rhs-weights]
+        (let [^java.util.List lat-lng-seq (if (instance? java.util.List
+                                                            lat-lng-seq)
+                                               lat-lng-seq
+                                               (vec lat-lng-seq))
+              n-elems (.size lat-lng-seq)
+              lhs-weights (typecast/datatype->reader :float32 lhs-weights)
+              rhs-weights (typecast/datatype->reader :float32 rhs-weights)
+              lhs-x-axis (coord-1d (.getXaxis lhs-coords))
+              lhs-y-axis (coord-1d (.getYaxis lhs-coords))
+              rhs-x-axis (coord-1d (.getXaxis rhs-coords))
+              rhs-y-axis (coord-1d (.getYaxis rhs-coords))]
+          (reify FloatReader
+            (lsize [rdr] n-elems)
+            (read [rdr idx]
+                (let [[lat lng] (.get lat-lng-seq idx)
+                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl.
+                                                          (double lat)
+                                                          (double lng)))
+                      lhs-x-idx (.findCoordElementBounded lhs-x-axis
+                                                             (.getX proj-point))
+                      lhs-y-idx (.findCoordElementBounded lhs-y-axis
+                                                          (.getY proj-point))
+                      rhs-x-idx (.findCoordElementBounded rhs-x-axis
+                                                             (.getX proj-point))
+                      rhs-y-idx (.findCoordElementBounded rhs-y-axis
+                                                          (.getY proj-point))]
+                  (+
+                   (.op weight-fn (.read lhs-weights idx)
+                        (.read2d lhs-data lhs-y-idx lhs-x-idx))
+                   (.op weight-fn (.read rhs-weights idx)
+                        (.read2d rhs-data rhs-y-idx rhs-x-idx)))))))))))
