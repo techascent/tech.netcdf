@@ -145,3 +145,19 @@
       ;;Make sure everything is totally realized.
       (time (-> (query-fn data 0.5 0.5)
                 (dtype/copy! (float-array (count data))))))))
+
+
+(deftest gfs-grid-test
+  (let [grid (first (netcdf/fname->grids "./test/data/tmp-gfs.grib2"))
+
+        lat-lng-data (take 100 (endless-lat-lng-stream))
+        exact-query (-> (netcdf/lat-lng-query-grid-exact grid
+                                                         lat-lng-data)
+                        :values)
+        query-fn (netcdf/setup-nearest-projection grid)
+        lininterp-query-fn (netcdf/setup-linear-interpolator
+                            grid grid)
+        precalc-query (query-fn lat-lng-data)
+        lininterp-query (lininterp-query-fn lat-lng-data 0.5 0.5)]
+    (is (dfn/equals exact-query precalc-query))
+    (is (dfn/equals exact-query lininterp-query))))

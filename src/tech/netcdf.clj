@@ -385,9 +385,10 @@
 
 (defn- get-field
   [item fname]
-  (let [field (doto (.getDeclaredField ^Class (type item) fname)
-                (.setAccessible true))]
-    (.get field item)))
+  (when item
+    (when-let [field (.getDeclaredField ^Class (type item) fname)]
+      (.setAccessible field true)
+      (.get field item))))
 
 (defn- coord-1d
   ^CoordinateAxis1D [item]
@@ -398,10 +399,10 @@
 
 (defn setup-nearest-projection
   [grid]
-  (let [^CoordinateSystem coords (:coordinate-system grid)
+  (let [^GridCoordSystem coords (:coordinate-system grid)
         proj (.getProjection coords)
-        x-axis (.getXaxis coords)
-        y-axis (.getYaxis coords)
+        x-axis (.getXHorizAxis coords)
+        y-axis (.getYHorizAxis coords)
         x-coords (when x-axis (get-field x-axis "coords"))
         y-coords (when y-axis (get-field y-axis "coords"))]
     (if (and (instance? CoordinateAxis1D x-axis)
@@ -487,12 +488,12 @@
 (defn setup-linear-interpolator
   [lhs-grid rhs-grid & [lerp-op]]
   (let [lerp-op (to-lerp-op (or lerp-op default-lerp-op))
-        ^CoordinateSystem lhs-coords (:coordinate-system lhs-grid)
-        ^CoordinateSystem rhs-coords (:coordinate-system rhs-grid)
+        ^GridCoordSystem lhs-coords (:coordinate-system lhs-grid)
+        ^GridCoordSystem rhs-coords (:coordinate-system rhs-grid)
         lhs-proj (.getProjection lhs-coords)
         rhs-proj (.getProjection rhs-coords)
-        lhs-axis [(.getXaxis lhs-coords) (.getYaxis lhs-coords)]
-        rhs-axis [(.getXaxis rhs-coords) (.getYaxis rhs-coords)]
+        lhs-axis [(.getXHorizAxis lhs-coords) (.getYHorizAxis lhs-coords)]
+        rhs-axis [(.getXHorizAxis rhs-coords) (.getYHorizAxis rhs-coords)]
         lhs-x-coords (get-field (first lhs-axis) "coords")
         lhs-y-coords (get-field (second lhs-axis) "coords")
         rhs-x-coords (get-field (first rhs-axis) "coords")
@@ -505,7 +506,8 @@
         rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))]
     ;;fastpath for same projection and both regular projections.
     (if (and (= lhs-proj rhs-proj)
-               (every? #(.isRegular ^CoordinateAxis1D %)
+             (every? #(and (not (nil? %))
+                           (.isRegular ^CoordinateAxis1D %))
                        (concat lhs-axis rhs-axis))
                (dfn/equals lhs-axis-data rhs-axis-data))
       (let [[x-min y-min x-max y-max] lhs-axis-data
@@ -573,10 +575,10 @@
                             lhs-weights)
               lhs-weights (typecast/datatype->reader :float32 lhs-weights)
               rhs-weights (typecast/datatype->reader :float32 rhs-weights)
-              lhs-x-axis (coord-1d (.getXaxis lhs-coords))
-              lhs-y-axis (coord-1d (.getYaxis lhs-coords))
-              rhs-x-axis (coord-1d (.getXaxis rhs-coords))
-              rhs-y-axis (coord-1d (.getYaxis rhs-coords))]
+              lhs-x-axis (coord-1d (.getXHorizAxis lhs-coords))
+              lhs-y-axis (coord-1d (.getYHorizAxis lhs-coords))
+              rhs-x-axis (coord-1d (.getXHorizAxis rhs-coords))
+              rhs-y-axis (coord-1d (.getYHorizAxis rhs-coords))]
           (reify FloatReader
             (lsize [rdr] n-elems)
             (read [rdr idx]
