@@ -440,12 +440,11 @@
             (reify FloatReader
               (lsize [rdr] n-elems)
               (read [rdr idx]
-                (let [^List entry (.get lat-lng-seq idx)
-                      lat (.get entry 0)
-                      lng (.get entry 1)
-                      proj-point (.latLonToProj proj (LatLonPointImpl.
-                                                      (double lat)
-                                                      (double lng)))
+                (let [ll-data (typecast/datatype->reader :float64
+                                                         (.get lat-lng-seq idx))
+                      lat (.read ll-data 0)
+                      lng (.read ll-data 1)
+                      proj-point (.latLonToProj proj (LatLonPointImpl. lat lng))
                       grid-idx-x (-> (- (.getX proj-point) x-min)
                                      (* x-mult)
                                      (Math/round)
@@ -468,10 +467,10 @@
           (reify FloatReader
             (lsize [rdr] n-elems)
             (read [rdr idx]
-              (let [[lat lng] (.get lat-lng-seq idx)
-                    proj-point (.latLonToProj proj (LatLonPointImpl.
-                                                    (double lat)
-                                                    (double lng)))
+              (let [ll-data (typecast/datatype->reader :float64 (.get lat-lng-seq idx))
+                    lat (.read ll-data 0)
+                    lng (.read ll-data 1)
+                    proj-point (.latLonToProj proj (LatLonPointImpl. lat lng))
                     grid-idx-x (.findCoordElementBounded x-axis (.getX proj-point))
                     grid-idx-y (.findCoordElementBounded y-axis (.getY proj-point))]
                 (.read2d data grid-idx-y grid-idx-x)))))))))
@@ -543,10 +542,10 @@
             (reify FloatReader
               (lsize [rdr] n-elems)
               (read [rdr idx]
-                (let [[lat lng] (.get lat-lng-seq idx)
-                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl.
-                                                          (double lat)
-                                                          (double lng)))
+                (let [data (typecast/datatype->reader :float64 (.get lat-lng-seq idx))
+                      lat (.read data 0)
+                      lng (.read data 1)
+                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl. lat lng))
                       grid-idx-x (-> (- (.getX proj-point) x-min)
                                      (* x-mult)
                                      (Math/round)
@@ -582,20 +581,20 @@
           (reify FloatReader
             (lsize [rdr] n-elems)
             (read [rdr idx]
-                (let [[lat lng] (.get lat-lng-seq idx)
-                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl.
-                                                          (double lat)
-                                                          (double lng)))
-                      lhs-x-idx (.findCoordElementBounded lhs-x-axis
-                                                             (.getX proj-point))
-                      lhs-y-idx (.findCoordElementBounded lhs-y-axis
-                                                          (.getY proj-point))
-                      rhs-x-idx (.findCoordElementBounded rhs-x-axis
-                                                             (.getX proj-point))
-                      rhs-y-idx (.findCoordElementBounded rhs-y-axis
-                                                          (.getY proj-point))]
-                  (.lerp lerp-op
-                         (.read lhs-weights idx)
-                         (.read2d lhs-data lhs-y-idx lhs-x-idx)
-                         (.read rhs-weights idx)
-                         (.read2d rhs-data rhs-y-idx rhs-x-idx))))))))))
+              (let [data (typecast/datatype->reader :float64 (.get lat-lng-seq idx))
+                    lat (.read data 0)
+                    lng (.read data 1)
+                    proj-point (.latLonToProj lhs-proj (LatLonPointImpl. lat lng))
+                    lhs-x-idx (.findCoordElementBounded lhs-x-axis
+                                                        (.getX proj-point))
+                    lhs-y-idx (.findCoordElementBounded lhs-y-axis
+                                                        (.getY proj-point))
+                    rhs-x-idx (.findCoordElementBounded rhs-x-axis
+                                                        (.getX proj-point))
+                    rhs-y-idx (.findCoordElementBounded rhs-y-axis
+                                                        (.getY proj-point))]
+                (.lerp lerp-op
+                       (.read lhs-weights idx)
+                       (.read2d lhs-data lhs-y-idx lhs-x-idx)
+                       (.read rhs-weights idx)
+                       (.read2d rhs-data rhs-y-idx rhs-x-idx))))))))))

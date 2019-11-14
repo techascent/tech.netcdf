@@ -126,7 +126,8 @@
 (deftest prebaked-time-test
   (println "prebaked")
   (let [grids (netcdf/fname->grids "./test/data/3600.grib2")
-        data (vec (take 100000 (endless-lat-lng-stream)))
+        data (->> (take 100000 (endless-lat-lng-stream))
+                  (mapv #(dtype/->reader % :float64)))
         query-fn (netcdf/setup-nearest-projection (first grids))]
     (dotimes [iter 5]
       ;;Make sure everything is totally realized.
@@ -137,7 +138,8 @@
 (deftest lerp-time-test
   (println "prebake-lerp")
   (let [grids (netcdf/fname->grids "./test/data/3600.grib2")
-        data (vec (take 100000 (endless-lat-lng-stream)))
+        data (->> (take 100000 (endless-lat-lng-stream))
+                  (mapv #(dtype/->reader % :float64)))
         query-fn (netcdf/setup-linear-interpolator
                   (first grids)
                   (first grids))]
