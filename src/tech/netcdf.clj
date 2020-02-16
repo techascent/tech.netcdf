@@ -13,13 +13,15 @@
             [clojure.pprint :as pp])
   (:import [ucar.nc2.dataset NetcdfDataset CoordinateAxis1D CoordinateSystem]
            [ucar.nc2 Dimension NetcdfFile Attribute Variable]
-           [ucar.unidata.geoloc ProjectionImpl LatLonRect LatLonPointImpl]
+           [ucar.unidata.geoloc ProjectionImpl LatLonRect LatLonPointImpl
+            Projection ProjectionPointImpl]
+           [ucar.unidata.geoloc.projection LambertConformal]
            [ucar.nc2.dt.grid GridDataset GridDataset$Gridset]
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
            [tech.v2.datatype IntReader FloatReader]
-           [tech.netcdf LerpOp]
+           [tech.netcdf LerpOp FastLambertConformal]
            [java.util List RandomAccess]))
 
 
@@ -407,6 +409,17 @@
     (throw (Exception. (format "Axis is not a coord1d axis: %s" (type item))))))
 
 
+(defn make-fast-lat-lon-projector
+  ^Projection [^Projection proj]
+  (if (instance? LambertConformal proj)
+    (let [fast-proj (FastLambertConformal. proj)]
+      (reify
+        Projection
+        (latLonToProj [lhs-proj latlon-pt proj-pt-impl]
+          (.latLonToProj fast-proj latlon-pt proj-pt-impl))))
+    proj))
+
+
 (defn setup-nearest-projection
   [grid]
   (let [^GridCoordSystem coords (:coordinate-system grid)
@@ -433,7 +446,8 @@
             y-range (- y-max y-min)
             x-mult (/ nn-x x-range)
             y-mult (/ nn-y y-range)
-            data (dtt-typecast/->float32-reader (:data grid))]
+            data (dtt-typecast/->float32-reader (:data grid))
+            proj (make-fast-lat-lon-projector proj)]
         (fn [lat-lng-seq]
           (let [lat-lng-seq (to-rand-access lat-lng-seq)
                 n-elems (.size lat-lng-seq)]
@@ -444,7 +458,9 @@
                                                          (.get lat-lng-seq idx))
                       lat (.read ll-data 0)
                       lng (.read ll-data 1)
-                      proj-point (.latLonToProj proj (LatLonPointImpl. lat lng))
+                      ^ProjectionPointImpl proj-point
+                      (.latLonToProj proj (LatLonPointImpl. lat lng)
+                                     (ProjectionPointImpl.))
                       grid-idx-x (-> (- (.getX proj-point) x-min)
                                      (* x-mult)
                                      (Math/round)
@@ -511,8 +527,8 @@
         rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))]
     ;;fastpath for same projection and both regular projections.
     (if (and (= lhs-proj rhs-proj)
-             (every? #(and (not (nil? %))
-                           (.isRegular ^CoordinateAxis1D %))
+               (every? #(and (not (nil? %))
+                             (.isRegular ^CoordinateAxis1D %))
                        (concat lhs-axis rhs-axis))
                (dfn/equals lhs-axis-data rhs-axis-data))
       (let [[x-min y-min x-max y-max] lhs-axis-data
@@ -527,7 +543,8 @@
             nn-x (dec n-x)
             nn-y (dec n-y)
             x-mult (/ nn-x x-range)
-            y-mult (/ nn-y y-range)]
+            y-mult (/ nn-y y-range)
+            lhs-proj (make-fast-lat-lon-projector lhs-proj)]
         (fn [lat-lng-seq lhs-weights rhs-weights]
           (let [lat-lng-seq (to-rand-access lat-lng-seq)
                 n-elems (.size lat-lng-seq)
@@ -545,7 +562,9 @@
                 (let [data (typecast/datatype->reader :float64 (.get lat-lng-seq idx))
                       lat (.read data 0)
                       lng (.read data 1)
-                      proj-point (.latLonToProj lhs-proj (LatLonPointImpl. lat lng))
+                      ^ProjectionPointImpl proj-point
+                      (.latLonToProj lhs-proj (LatLonPointImpl. lat lng)
+                                     (ProjectionPointImpl.))
                       grid-idx-x (-> (- (.getX proj-point) x-min)
                                      (* x-mult)
                                      (Math/round)
@@ -584,15 +603,16 @@
               (let [data (typecast/datatype->reader :float64 (.get lat-lng-seq idx))
                     lat (.read data 0)
                     lng (.read data 1)
-                    proj-point (.latLonToProj lhs-proj (LatLonPointImpl. lat lng))
+                    lhs-proj-point (.latLonToProj lhs-proj (LatLonPointImpl. lat lng))
+                    rhs-proj-point (.latLonToProj rhs-proj (LatLonPointImpl. lat lng))
                     lhs-x-idx (.findCoordElementBounded lhs-x-axis
-                                                        (.getX proj-point))
+                                                        (.getX lhs-proj-point))
                     lhs-y-idx (.findCoordElementBounded lhs-y-axis
-                                                        (.getY proj-point))
+                                                        (.getY lhs-proj-point))
                     rhs-x-idx (.findCoordElementBounded rhs-x-axis
-                                                        (.getX proj-point))
+                                                        (.getX rhs-proj-point))
                     rhs-y-idx (.findCoordElementBounded rhs-y-axis
-                                                        (.getY proj-point))]
+                                                        (.getY rhs-proj-point))]
                 (.lerp lerp-op
                        (.read lhs-weights idx)
                        (.read2d lhs-data lhs-y-idx lhs-x-idx)
