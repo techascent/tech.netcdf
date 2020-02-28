@@ -618,3 +618,49 @@
                        (.read2d lhs-data lhs-y-idx lhs-x-idx)
                        (.read rhs-weights idx)
                        (.read2d rhs-data rhs-y-idx rhs-x-idx))))))))))
+
+
+(defn- build-latlon-bbox
+  [^Projection proj y-coord x-coords]
+  (let [x-coords (typecast/datatype->reader :float64 x-coords)
+        y-coord (double y-coord)
+        n-elems (.lsize x-coords)]
+    (loop [idx 0
+           x-min Double/MAX_VALUE
+           y-min Double/MAX_VALUE
+           x-max (- Double/MAX_VALUE)
+           y-max (- Double/MAX_VALUE)]
+      (if (< idx n-elems)
+        (let [pt-data (.projToLatLon proj
+                                     (ProjectionPointImpl. (.read x-coords idx)
+                                                           y-coord)
+                                     (LatLonPointImpl. 0 0))
+              pt-x (.getLongitude pt-data)
+              pt-y (.getLatitude pt-data)]
+          (recur (unchecked-inc idx)
+                 (min x-min pt-x)
+                 (min y-min pt-y)
+                 (max x-max pt-x)
+                 (max y-max pt-y)))
+        [x-min y-min x-max y-max]))))
+
+
+(defn inclusive-exclusive-HRRR-bounding-boxes-from-grid
+  "Take the y min,max values from the grid projection and project
+  every point on the x axis.  Build two bounding boxes (y min,max) from the
+  projected data"
+  [hrrr-grid]
+  (let [^GridCoordSystem coords (:coordinate-system hrrr-grid)
+        proj (.getProjection coords)
+        x-axis (.getXHorizAxis coords)
+        y-axis (.getYHorizAxis coords)
+        x-coords (when x-axis (get-field x-axis "coords"))
+        y-coords (when y-axis (get-field y-axis "coords"))
+        y-min (double (first y-coords))
+        y-max (double (last y-coords))
+        [x-bottom-min y-bottom-min
+         x-bottom-max y-bottom-max] (build-latlon-bbox proj y-min x-coords)
+        [x-top-min y-top-min
+         x-top-max y-top-max] (build-latlon-bbox proj y-max x-coords)]
+    {:inclusive-box [x-bottom-min y-bottom-max x-bottom-max y-top-min]
+     :exclusive-box [x-top-min y-bottom-min x-top-max y-top-max]}))
