@@ -8,4 +8,4 @@
   :lein-tools-deps/config {:config-files [:install :user :project]}
   :profiles {:dev {:dependencies [[org.slf4j/slf4j-nop "1.7.25"]]}}
   :java-source-paths ["java"]
-  :repositories {"boundlessgeo" "https://repo.boundlessgeo.com/artifactory/ucar-cache"})
+  :repositories {"unidata" "https://artifacts.unidata.ucar.edu/content/repositories/unidata-releases/"})

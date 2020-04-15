@@ -11,5 +11,5 @@
                       :exclusions [net.java.dev.jna/jna]}
         edu.ucar/grib {:mvn/version "4.6.13"
                        :exclusions [net.java.dev.jna/jna]}}
- :mvn/repos {"boundlessgeo"
-             {:url "https://repo.boundlessgeo.com/artifactory/ucar-cache"}}}
+ :mvn/repos {"unidata"
+             {:url "https://artifacts.unidata.ucar.edu/content/repositories/unidata-releases/"}}}
