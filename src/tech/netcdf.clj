@@ -20,9 +20,13 @@
            [ucar.nc2.dt GridDatatype GridCoordSystem]
            [ucar.ma2 DataType]
            [tech.v2.tensor FloatTensorReader]
-           [tech.v2.datatype IntReader FloatReader]
+           [tech.v2.datatype IntReader FloatReader DoubleReader]
            [tech.netcdf LerpOp FastLambertConformal]
            [java.util List RandomAccess]))
+
+(comment
+  (def questionable-symbols
+    ['setup-linear-interpolator]))
 
 
 (set! *warn-on-reflection* true)
@@ -506,6 +510,20 @@
     (throw (Exception. (format "Op is not a lerp op: %s" (type item))))))
 
 
+(defn- double-reader-first
+  ^double [^DoubleReader data]
+  (if (and data (> (.lsize data) 0))
+    (.read data 0)
+    0.0))
+
+
+(defn- double-reader-last
+  ^double [^DoubleReader data]
+  (if (and data (> (.lsize data) 0))
+    (.read data (unchecked-dec (.lsize data)))
+    0.0))
+
+
 (defn setup-linear-interpolator
   [lhs-grid rhs-grid & [lerp-op]]
   (let [lerp-op (to-lerp-op (or lerp-op default-lerp-op))
@@ -515,14 +533,14 @@
         rhs-proj (.getProjection rhs-coords)
         lhs-axis [(.getXHorizAxis lhs-coords) (.getYHorizAxis lhs-coords)]
         rhs-axis [(.getXHorizAxis rhs-coords) (.getYHorizAxis rhs-coords)]
-        lhs-x-coords (get-field (first lhs-axis) "coords")
-        lhs-y-coords (get-field (second lhs-axis) "coords")
-        rhs-x-coords (get-field (first rhs-axis) "coords")
-        rhs-y-coords (get-field (second rhs-axis) "coords")
-        lhs-axis-data [(first lhs-x-coords) (first lhs-y-coords)
-                       (last lhs-x-coords) (last lhs-y-coords)]
-        rhs-axis-data [(first rhs-x-coords) (first rhs-y-coords)
-                       (last rhs-x-coords) (last rhs-y-coords)]
+        lhs-x-coords (typecast/datatype->reader :float64 (get-field (first lhs-axis) "coords"))
+        lhs-y-coords (typecast/datatype->reader :float64 (get-field (second lhs-axis) "coords"))
+        rhs-x-coords (typecast/datatype->reader :float64  (get-field (first rhs-axis) "coords"))
+        rhs-y-coords (typecast/datatype->reader :float64 (get-field (second rhs-axis) "coords"))
+        lhs-axis-data [(double-reader-first lhs-x-coords) (double-reader-first lhs-y-coords)
+                       (double-reader-last lhs-x-coords) (double-reader-last lhs-y-coords)]
+        rhs-axis-data [(double-reader-first rhs-x-coords) (double-reader-first rhs-y-coords)
+                       (double-reader-last rhs-x-coords) (double-reader-last rhs-y-coords)]
         lhs-data (dtt-typecast/->float32-reader (:data lhs-grid))
         rhs-data (dtt-typecast/->float32-reader (:data rhs-grid))]
     ;;fastpath for same projection and both regular projections.
@@ -538,8 +556,8 @@
             y-max (double y-max)
             x-range (- x-max x-min)
             y-range (- y-max y-min)
-            n-x (count lhs-x-coords)
-            n-y (count lhs-y-coords)
+            n-x (.lsize lhs-x-coords)
+            n-y (.lsize lhs-y-coords)
             nn-x (dec n-x)
             nn-y (dec n-y)
             x-mult (/ nn-x x-range)
